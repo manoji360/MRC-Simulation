@@ -66,7 +66,14 @@ These are not yet final, and no product-level API should be claimed in this phas
 
 ## Deployment and runtime target
 
-No production deployment is expected at this checkpoint. The current repository represents the setup and planning stage, and the final runtime target will be chosen when the team starts implementation. The current design direction is Unity-first rather than Gazebo-first.
+We plans to use Unity as the primary simulation environment. By Week 10, the goal is to develop a minimal working rover prototype that can run locally on a designated computer for demonstration.
+The prototype will focus on launching a Unity simulation scene and demonstrating basic rover functionality. Cloud hosting and public web deployment are not planned for this milestone.
+We also plans to test the simulation locally before presenting it. The specific demonstration computer, infrastructure owner, and distribution method have not yet been finalized.
+Production Target: Local Unity simulation demonstration on a designated computer.
+Target Date: Week 10.
+Infrastructure Owner: To be assigned.
+Mentor Approval: Pending discussion and confirmation.
+Approval Follow-up: The Project Manager will discuss the proposed production target with the mentor by November 15, 2026.
 
 ## Decisions intentionally deferred
 
