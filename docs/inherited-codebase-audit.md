@@ -8,11 +8,11 @@ However, the inherited Unity project is currently unusable, and the team must in
 
 We have identified three possible development approaches:
 
-Repair the existing Unity project (preferred): Investigate and resolve the issues preventing the inherited project from running.
+1. **Repair the existing Unity project (preferred):** Investigate and resolve the issues preventing the inherited project from running.
 
-Create a new Unity project: If repairing the inherited project is not feasible within our project timeline, rebuild the simulation using Unity.
+2. **Create a new Unity project:** If repairing the inherited project is not feasible within our timeline, rebuild using Unity.
 
-Switch to Gazebo: If Unity presents technical limitations that cannot be resolved, consider Gazebo as an alternative simulation environment.
+3. **Switch to Gazebo:** If Unity presents technical limitations that cannot be resolved, consider Gazebo as an alternative.
 
 The team will prioritize evaluating the inherited codebase before committing to a replacement implementation.
 
