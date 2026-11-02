@@ -1,6 +1,6 @@
-Inherited-Codebase Audit
+# Inherited-Codebase Audit
 
-1. Project Background
+## 1. Project Background
 
 The Mars Rover Simulation team inherited a Unity project developed by the previous year's team. Our preferred approach is to repair and reuse this existing project rather than rebuild the simulation from scratch.
 
@@ -15,3 +15,13 @@ Create a new Unity project: If repairing the inherited project is not feasible w
 Switch to Gazebo: If Unity presents technical limitations that cannot be resolved, consider Gazebo as an alternative simulation environment.
 
 The team will prioritize evaluating the inherited codebase before committing to a replacement implementation.
+
+## 2. Current Codebase Status
+
+Not yet verified.
+
+## 3. Tests and CI
+
+Not yet verified.
+
+## 4. Dependencies
