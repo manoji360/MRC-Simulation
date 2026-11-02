@@ -14,3 +14,4 @@
 | Unity prototype toolchain decision | Team / mentor | Pending | Not yet confirmed |
 | Initial project scope confirmation | Project Manager | Pending | Not yet finalized |
 | Review of early design direction | Student team / mentor | Pending | Not yet scheduled |
+| Unity demonstration target approval | Project Manager | Not yet requested | Pending mentor discussion by 2026-11-15 |
