@@ -1,0 +1,20 @@
+# Unity generated
+MRC-Rover/[Ll]ibrary/
+MRC-Rover/[Tt]emp/
+MRC-Rover/[Ll]ogs/
+MRC-Rover/[Oo]bj/
+MRC-Rover/[Bb]uild/
+MRC-Rover/[Bb]uilds/
+MRC-Rover/[Uu]serSettings/
+MRC-Rover/.vs/
+MRC-Rover/*.csproj
+MRC-Rover/*.sln
+MRC-Rover/*.slnx
+
+# Imported robots are generated from urdf-pipeline output (third-party CAD meshes)
+MRC-Rover/Assets/Robots/
+MRC-Rover/Assets/Robots.meta
+
+# Feasibility test results (generated)
+MRC-Rover/FeasibilityResults/
+MRC-Rover/TestResults*.xml
