@@ -73,6 +73,11 @@ def render_check(result: CheckResult, config: Config) -> list[str]:
                 lines.append(f"{INDENT}prepare will split the robot into {result.parts} parts.")
         if result.frame_only:
             lines.append(f"[INFO] {result.frame_only} link(s) are pure coordinate frames (no shape, no mass).")
+        if result.physics:
+            lines.append("")
+            lines.append("Physics (for Unity's physics engine):")
+            for level, message in result.physics:
+                lines.append(f"{'[WARN]' if level == 'warn' else '[INFO]'} {message}")
 
     lines.append("")
     if result.ok:

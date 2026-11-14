@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .compare import diff_robots
+from .compat import remove_added_axes, remove_placeholder_inertials
 from .errors import PipelineError
 from .frames import restore_frames
 from .manifest import FILE_NAME, read_manifest
@@ -43,6 +44,10 @@ def rebuild_robot(manifest: dict, out_dir: Path) -> Robot:
         robot.add_joint(element_from_string(bridge["joint_xml"]))
     # 2. frame collapse: re-add frame links and their fixed joints
     restore_frames(robot, manifest["collapsed_frames"])
+    # 2b. Unity compatibility fixes: remove explicit default axes and placeholder masses
+    compat = manifest.get("unity_compat", {})
+    remove_added_axes(robot, compat.get("added_default_axis", []))
+    remove_placeholder_inertials(robot, compat.get("placeholder_inertial", {}).get("links", []))
     # 3. mesh split: put each original <visual>/<collision> back where its chunks are
     for entry in manifest["mesh_chunks"]:
         link = robot.links[entry["link"]].element

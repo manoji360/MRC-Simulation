@@ -1,0 +1,133 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from builders import ROVER_LIKE_TOTAL_MASS, chain, write_rover_like
+from urdf_pipeline.cli import main
+from urdf_pipeline.config import Config
+from urdf_pipeline.errors import PipelineError, ValidationError
+from urdf_pipeline.merge import rebuild
+from urdf_pipeline.mesh_split import split_mesh, triangles_match
+from urdf_pipeline.pipeline import check, prepare
+from urdf_pipeline.split import plan_split
+from urdf_pipeline.parse import parse_urdf_string
+from urdf_pipeline.stl import read_stl
+
+REPO = Path(__file__).resolve().parents[2]
+REAL_ROVER = REPO / "urdf-pipeline" / "input" / "rover.urdf"
+
+
+def test_check_reports_ready_and_physics(tmp_path):
+    result = check(write_rover_like(tmp_path / "in"))
+    assert result.ok and result.links == 25 and result.frame_only == 4
+    assert any("back_link_joint" in m for _, m in result.physics)
+    assert any("no <axis>" in m for _, m in result.physics)
+
+
+@pytest.mark.parametrize("config", [
+    Config(),
+    Config(collapse_frames="always"),
+    Config(split_meshes=True),
+    Config(max_links=8, collapse_frames="always", split_meshes=True),
+    Config(massless_link_mass_kg=None),
+], ids=["default", "collapse", "split-meshes", "everything", "no-placeholders"])
+def test_prepare_is_lossless(tmp_path, config):
+    urdf = write_rover_like(tmp_path / "in", heavy_wheel=True)
+    result = prepare(urdf, tmp_path / "out", config)  # raises if its own self-check fails
+    m = result.manifest
+    assert (tmp_path / "out" / "REPORT.md").is_file()
+    assert (tmp_path / "out" / "test_pkg" / "meshes" / "body.stl").is_file()
+    assert m["unity_compat"]["added_default_axis"] == ["back_link_joint"]
+    placeholders = m["unity_compat"]["placeholder_inertial"]["links"]
+    expected = ROVER_LIKE_TOTAL_MASS + len(placeholders) * (config.massless_link_mass_kg or 0)
+    assert m["physics"]["unity_expected_mass_kg"] == pytest.approx(expected)
+    if config.split_meshes:
+        assert m["stats"]["meshes_split"] == 1
+    if config.max_links == 8:
+        assert m["stats"]["parts"] > 1 and len(m["bridge_joints"]) == m["stats"]["parts"] - 1
+    assert rebuild(tmp_path / "out").differences == []
+
+
+def test_placeholders_do_not_block_frame_collapse(tmp_path):
+    m = prepare(write_rover_like(tmp_path / "in"), tmp_path / "out", Config(collapse_frames="always")).manifest
+    assert m["stats"]["frames_collapsed"] == 4
+    assert m["unity_compat"]["placeholder_inertial"]["links"] == ["jaws"]
+
+
+def test_reference_poses_are_converted(tmp_path):
+    m = prepare(write_rover_like(tmp_path / "in"), tmp_path / "out").manifest
+    pose = m["reference_poses"]["arm_base"]  # ROS (0.2, 0, 0.15) from base_link
+    assert pose["ros"]["xyz"] == [0.2, 0.0, 0.15]
+    assert pose["unity"]["position"] == [0.0, 0.15, 0.2]
+
+
+def test_mesh_split_preserves_every_triangle(tmp_path):
+    urdf = write_rover_like(tmp_path / "in", heavy_wheel=True)
+    mesh = read_stl(urdf.parent / "meshes" / "wheel.stl")
+    for mode, limit in (("raw", 65535), ("welded", 1000)):
+        chunks = split_mesh(mesh, limit, mode)
+        assert len(chunks) > 1 and triangles_match(mesh, chunks)
+        counts = [c.raw_vertex_count if mode == "raw" else c.welded_vertex_count for c in chunks]
+        assert max(counts) <= limit
+
+
+def test_articulation_split_respects_limit_and_covers_all_links():
+    r = parse_urdf_string(chain(150))
+    plan = plan_split(r, 60)
+    assert all(len(p.links) <= 60 for p in plan.parts)
+    assert sorted(n for p in plan.parts for n in p.links) == sorted(r.links)
+    assert len(plan.cut_joints) == len(plan.parts) - 1
+    assert plan_split(r, 60).cut_joints == plan.cut_joints  # deterministic
+
+
+def test_output_folder_safety(tmp_path):
+    urdf = write_rover_like(tmp_path / "in")
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "notes.txt").write_text("keep me")
+    with pytest.raises(PipelineError, match="did not create"):
+        prepare(urdf, foreign)
+    assert (foreign / "notes.txt").read_text() == "keep me"
+    prepare(urdf, tmp_path / "out")
+    prepare(urdf, tmp_path / "out")  # re-running over our own output is allowed
+
+
+def test_invalid_and_missing_meshes(tmp_path):
+    urdf = write_rover_like(tmp_path / "in")
+    (urdf.parent / "meshes" / "wheel.stl").unlink()
+    with pytest.raises(PipelineError, match="could not be found"):
+        prepare(urdf, tmp_path / "out")
+    prepare(urdf, tmp_path / "out2", Config(ignore_missing_meshes=True))
+    bad = tmp_path / "bad.urdf"
+    bad.write_text('<robot name="b"><link name="a"/><link name="b"/></robot>')
+    with pytest.raises(ValidationError):
+        prepare(bad, tmp_path / "out3")
+
+
+def test_cli_exit_codes(tmp_path, capsys):
+    urdf = write_rover_like(tmp_path / "in")
+    assert main(["check", str(urdf)]) == 0
+    assert "READY" in capsys.readouterr().out
+    assert main(["prepare", str(urdf), "-o", str(tmp_path / "out")]) == 0
+    assert main(["rebuild", str(tmp_path / "out")]) == 0
+    bad = tmp_path / "bad.urdf"
+    bad.write_text('<robot name="b"><link name="a"/><link name="b"/></robot>')
+    assert main(["check", str(bad)]) == 2
+    assert main(["check", str(tmp_path / "nope.urdf")]) == 1
+    cfg = tmp_path / "cfg.json"
+    assert main(["init-config", str(cfg)]) == 0
+    assert main(["check", str(urdf), "--config", str(cfg)]) == 0
+    cfg.write_text(json.dumps({"max_linkz": 5}))
+    assert main(["check", str(urdf), "--config", str(cfg)]) == 1
+    assert "Did you mean 'max_links'" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not REAL_ROVER.is_file(), reason="real rover not generated (run env/generate_input.sh)")
+def test_real_rover(tmp_path):
+    result = check(REAL_ROVER)
+    assert result.ok and result.links == 55
+    m = prepare(REAL_ROVER, tmp_path / "out").manifest
+    assert m["stats"]["parts"] == 1 and m["stats"]["mesh_files_copied"] == 34
+    assert m["unity_compat"]["added_default_axis"] == ["rover_back_left_link_joint", "rover_back_right_link_joint"]
+    assert rebuild(tmp_path / "out").differences == []

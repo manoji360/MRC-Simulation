@@ -10,6 +10,7 @@ from typing import Callable
 
 from . import __version__
 from .compare import diff_robots
+from .compat import add_default_axes, add_placeholder_inertials, joints_missing_axis, links_missing_inertial
 from .config import Config
 from .coordinates import pose_blocks_from_matrix, unity_block_from_origin
 from .errors import PipelineError, ValidationError
@@ -21,6 +22,7 @@ from .mesh_split import needs_split, split_mesh, triangles_match
 from .meshes import chunk_uri, companion_files, is_absolute, mesh_uses, output_key, resolve_mesh
 from .model import Robot
 from .parse import element_to_string, load_urdf, validate, write_urdf
+from .physics import physics_block, physics_issues, total_mass
 from .split import build_part_robots, plan_split, single_part_plan
 from .stl import read_stl, triangle_count, write_stl
 
@@ -52,6 +54,7 @@ class CheckResult:
     will_collapse: bool = False
     links_after: int = 0
     parts: int = 1
+    physics: list[tuple[str, str]] = field(default_factory=list)  # (level, message)
 
     @property
     def ok(self) -> bool:
@@ -102,6 +105,17 @@ def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
         result.missing_meshes = []
 
     if not problems:
+        result.physics = physics_issues(robot, config.joint_roles)
+        no_inertial = links_missing_inertial(robot)
+        if no_inertial and config.massless_link_mass_kg is not None:
+            result.physics.insert(0, ("info", f"{len(no_inertial)} link(s) have no <inertial>. Unity's URDF Importer would "
+                                              "give each a mass of 1 kg; prepare gives them a "
+                                              f"{config.massless_link_mass_kg * 1000:g} g placeholder instead."))
+        missing_axis = joints_missing_axis(robot)
+        if missing_axis:
+            result.physics.insert(0, ("info", f"{len(missing_axis)} moving joint(s) have no <axis> ({', '.join(missing_axis)}). "
+                                              "That is valid URDF, but it crashes Unity's URDF Importer; "
+                                              "prepare writes the default axis (1 0 0) explicitly."))
         result.frame_only = len(frame_only_links(robot))
         work = robot.copy()
         result.will_collapse = _should_collapse(work, config)
@@ -269,6 +283,10 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
     _prepare_output_dir(out_dir, urdf_path)
     robot = original.copy()
 
+    added_axes = add_default_axes(robot)
+    if added_axes:
+        log(f"Unity compatibility: wrote the default axis explicitly on {len(added_axes)} joint(s)")
+
     mesh_chunks: list[dict] = []
     mesh_files: dict = {}
     if config.split_meshes:
@@ -279,6 +297,14 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
     if _should_collapse(robot, config):
         frames = collapse_frames(robot)
         log(f"Removed {len(frames)} frame-only links from the physics tree ({len(robot.links)} links left)")
+
+    # After frame collapse: a placeholder mass would stop frames from counting as frame-only.
+    placeholder_links: list[str] = []
+    if config.massless_link_mass_kg is not None:
+        placeholder_links = add_placeholder_inertials(robot, config.massless_link_mass_kg)
+        if placeholder_links:
+            log(f"Unity compatibility: gave {len(placeholder_links)} massless link(s) a "
+                f"{config.massless_link_mass_kg * 1000:g} g placeholder mass (Unity would assume 1 kg each)")
 
     if len(robot.links) > config.max_links:
         plan = plan_split(robot, config.max_links, config.keep_together, config.cut_cost)
@@ -342,6 +368,15 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
         "mesh_files": mesh_files,
         "mesh_chunks": mesh_chunks,
         "reference_poses": {name: pose_blocks_from_matrix(t) for name, t in poses.items()},
+        "physics": {
+            **physics_block(original, config.joint_roles),
+            "unity_expected_mass_kg": round(
+                total_mass(original) + len(placeholder_links) * (config.massless_link_mass_kg or 0.0), 6),
+        },
+        "unity_compat": {
+            "added_default_axis": added_axes,
+            "placeholder_inertial": {"mass_kg": config.massless_link_mass_kg, "links": placeholder_links},
+        },
         "warnings": warnings,
     }
     manifest_path = out_dir / FILE_NAME

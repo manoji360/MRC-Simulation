@@ -29,6 +29,8 @@ class Config:
     cut_cost: dict[str, int] = field(default_factory=dict)
     mesh_roots: list[str] = field(default_factory=list)
     ignore_missing_meshes: bool = False
+    joint_roles: dict[str, str] = field(default_factory=dict)
+    massless_link_mass_kg: float | None = 0.001
 
     def check(self) -> Config:
         def fail(message: str) -> None:
@@ -59,6 +61,17 @@ class Config:
             fail("mesh_roots must be a list of folder paths.")
         if not isinstance(self.ignore_missing_meshes, bool):
             fail(f"ignore_missing_meshes must be true or false; got {self.ignore_missing_meshes!r}.")
+        if self.massless_link_mass_kg is not None and (
+            isinstance(self.massless_link_mass_kg, bool)
+            or not isinstance(self.massless_link_mass_kg, (int, float))
+            or self.massless_link_mass_kg <= 0
+        ):
+            fail(f"massless_link_mass_kg must be a positive number (kg) or null; got {self.massless_link_mass_kg!r}.")
+        roles = ("wheel", "suspension", "arm", "passive")
+        if not isinstance(self.joint_roles, dict) or not all(
+            isinstance(k, str) and v in roles for k, v in self.joint_roles.items()
+        ):
+            fail(f'joint_roles must map joint names to one of {", ".join(roles)}, e.g. {{"wrist_joint": "arm"}}.')
         return self
 
     @classmethod
@@ -118,4 +131,8 @@ EXAMPLE_CONFIG = {
     "_mesh_roots": "Extra folders to search for meshes (relative to this file).",
     "mesh_roots": [],
     "ignore_missing_meshes": False,
+    "_joint_roles": "Optional: correct a guessed joint role (wheel, suspension, arm, passive), used by Unity physics tests.",
+    "joint_roles": {},
+    "_massless_link_mass_kg": "Unity gives links without <inertial> a mass of 1 kg; prepare gives them this tiny mass instead (null = leave them alone).",
+    "massless_link_mass_kg": 0.001,
 }
