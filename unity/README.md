@@ -59,6 +59,41 @@ after importing a robot once from the command line.
 Wheel, suspension and arm joints are identified from `manifest.json → physics.joints[*].role`.
 If a role is guessed wrong, set `joint_roles` in a pipeline config file (`mrc-urdf init-config`).
 
+## Test environment: course + Utah desert
+
+`Assets/Scenes/RoverTestEnvironment.unity` is a baseline 3D environment for driving the rover in
+Unity physics (Earth gravity, 100 Hz). The scene is almost empty: when you press Play,
+`EnvironmentGenerator` builds everything from code, so nothing generated is committed.
+
+- **Test course** on a concrete pad, with one lane per challenge: ramps of 10°, 20° and 30° (0.6 m rise),
+  steps of 5, 10 and 15 cm, a 10 m rubble field (rocks 5–20 cm) and a 10 m rough-ground patch.
+- **Utah desert**: a 400 m × 400 m terrain modelled on the University Rover Challenge site near
+  the Mars Desert Research Station (Hanksville, UT). It has red sandy flats, grey bentonite mounds,
+  dry washes, flat-topped mesas with layered red, purple and grey cliffs, and about 700 rocks. It is
+  a stylised, procedural approximation, not survey data.
+
+**Drive it yourself:**
+1. Import a robot once (`run_feasibility`).
+2. Open `MRC-Rover` in Unity Hub, then open `Assets/Scenes/RoverTestEnvironment.unity`.
+3. Press **Play**.
+
+| Keys | Action |
+| --- | --- |
+| W/S, A/D (or arrows) | Drive / turn (skid steer); Shift = faster; Space = stop |
+| 1–9, Q/E, Z | Select an arm joint, move it, return the arm home |
+| T / G / R | Next test lane / Utah desert / reset to the current start |
+| Right mouse, scroll, C | Orbit, zoom, switch between chase and free camera; H hides the help |
+
+To use a different imported variant, select the `Environment` object and change **Robot Variant**.
+**MRC → Capture Environment Screenshots** saves preview images to `FeasibilityResults/screenshots/`.
+**MRC → Create Test Environment Scene** rebuilds the scene file.
+
+**Automated terrain tests** (`TerrainCourseTests`) drive the rover at 0.5 m/s over each lane and
+90 s into the desert, steering to hold a straight line. A test only *fails* if the physics goes
+unstable. Whether the rover crossed each feature, got stuck or flipped is recorded in
+`terrain.json` and shown in the runner's summary. PhysX "enhanced determinism" is enabled, so
+repeated runs give identical results.
+
 ## What is committed
 
 The project settings, packages and scripts are committed. Generated files are git-ignored:

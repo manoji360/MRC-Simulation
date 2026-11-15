@@ -60,6 +60,14 @@ p = json.loads((out / "physics.json").read_text()) if (out / "physics.json").exi
 get = lambda *k: (lambda d: [d := (d or {}).get(x) for x in k][-1])(p)
 print(f"{variant:<14} {result:<40} {get('mass','unity_total_kg')}/{get('mass','unity_expected_kg')}  "
       f"{get('drive','distance_forward_m')}  {get('arm','worst_error_deg')}  {get('performance','real_time_factor')}")
+if (out / "terrain.json").exists():
+    t = json.loads((out / "terrain.json").read_text())
+    lanes = t.get("lanes", {})
+    crossed = [n for n, v in lanes.items() if v.get("crossed")]
+    blocked = [n for n in lanes if n not in crossed]
+    d = t.get("desert", {})
+    print(f"{'':<14} terrain: crossed {len(crossed)} of {len(lanes)}" + (f" (blocked: {', '.join(blocked)})" if blocked else "")
+          + (f"; desert {d.get('progress_m')} m in {d.get('seconds')} s, max tilt {d.get('max_tilt_deg')} deg" if d else ""))
 PY
 done
 echo "Details: $RESULTS/<variant>/physics.json and import.json"

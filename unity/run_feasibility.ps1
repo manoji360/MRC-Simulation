@@ -61,6 +61,7 @@ function Invoke-Unity([string[]]$UnityArgs, [string]$LogFile) {
 }
 
 $summary = @()
+$terrainSummary = @()
 foreach ($variant in $Variants) {
     if (-not $variantSettings.ContainsKey($variant)) { throw "Unknown variant '$variant'. Known: $($variantSettings.Keys -join ', ')" }
     $settings = $variantSettings[$variant]
@@ -83,6 +84,17 @@ foreach ($variant in $Variants) {
 
     $imp = Get-Content (Join-Path $outDir "import.json") | ConvertFrom-Json
     $phy = Get-Content (Join-Path $outDir "physics.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
+    $ter = Get-Content (Join-Path $outDir "terrain.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
+    if ($ter) {
+        $lanes = @($ter.lanes.PSObject.Properties)
+        $terrainSummary += [pscustomobject]@{
+            Variant   = $variant
+            Crossed   = "{0} of {1}" -f @($lanes | Where-Object { $_.Value.crossed }).Count, $lanes.Count
+            Blocked   = (@($lanes | Where-Object { -not $_.Value.crossed } | ForEach-Object { "$($_.Name) ($(if ($_.Value.flipped) {'flipped'} elseif ($_.Value.stuck) {'stuck'} else {'timeout'}))" }) -join ", ")
+            MaxTiltDeg = ($lanes | ForEach-Object { $_.Value.max_tilt_deg } | Measure-Object -Maximum).Maximum
+            Desert    = if ($ter.desert) { "{0} m in {1} s, max tilt {2} deg{3}" -f $ter.desert.progress_m, $ter.desert.seconds, $ter.desert.max_tilt_deg, $(if ($ter.desert.stuck) {", STUCK"} elseif ($ter.desert.flipped) {", FLIPPED"} else {""}) } else { "" }
+        }
+    }
     $cases = @{}
     if (Test-Path $xml) { ([xml](Get-Content $xml)).SelectNodes("//test-case") | ForEach-Object { $cases[$_.name] = $_.result } }
     $failed = @($cases.GetEnumerator() | Where-Object { $_.Value -ne "Passed" } | ForEach-Object { $_.Key })
@@ -102,4 +114,9 @@ foreach ($variant in $Variants) {
 
 Write-Host "`n=== Feasibility summary ===" -ForegroundColor Cyan
 $summary | Format-Table -AutoSize | Out-String -Width 250 | Write-Host
-Write-Host "Details: $results\<variant>\physics.json and import.json"
+if ($terrainSummary.Count -gt 0) {
+    Write-Host "=== Terrain course and Utah desert (0.5 m/s) ===" -ForegroundColor Cyan
+    $terrainSummary | Format-Table -AutoSize | Out-String -Width 250 | Write-Host
+}
+Write-Host "Details: $results\<variant>\physics.json, terrain.json and import.json"
+Write-Host "Drive it yourself: open unity\MRC-Rover in Unity, open Assets/Scenes/RoverTestEnvironment.unity and press Play."

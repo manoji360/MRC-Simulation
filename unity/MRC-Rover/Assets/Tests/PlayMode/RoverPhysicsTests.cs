@@ -32,18 +32,7 @@ namespace MRC.Feasibility.Tests
         [OneTimeSetUp]
         public void LoadRobot()
         {
-            var current = FeasibilityPaths.CurrentVariant();
-            if (current == null) Assert.Ignore("No imported robot. Run unity/run_feasibility first.");
-            variant = (string)current["variant"];
-            manifest = JObject.Parse(File.ReadAllText(Path.Combine(FeasibilityPaths.ProjectRoot, (string)current["manifest"])));
-#if UNITY_EDITOR
-            string prefabPath = (string)current["prefab"] ?? UnityEditor.AssetDatabase
-                .FindAssets("t:Prefab", new[] { $"Assets/Robots/{variant}" })
-                .Select(UnityEditor.AssetDatabase.GUIDToAssetPath)
-                .FirstOrDefault(p => Path.GetDirectoryName(p).Replace('\\', '/') == $"Assets/Robots/{variant}");
-            prefab = prefabPath == null ? null : UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-#endif
-            if (prefab == null) Assert.Ignore($"Prefab for variant '{variant}' not found. Run the import step first.");
+            (variant, manifest, prefab) = TestRobot.Load();
             results = new JObject { ["variant"] = variant, ["dt"] = Dt };
         }
 

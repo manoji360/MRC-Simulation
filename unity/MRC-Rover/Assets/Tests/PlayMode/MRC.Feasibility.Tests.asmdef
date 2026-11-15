@@ -3,6 +3,7 @@
     "rootNamespace": "MRC.Feasibility.Tests",
     "references": [
         "MRC.Feasibility",
+        "MRC.Environment",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -1,0 +1,16 @@
+{
+    "name": "MRC.Environment",
+    "rootNamespace": "MRC.Environment",
+    "references": [
+        "MRC.Feasibility"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -39,8 +39,17 @@ namespace MRC.Feasibility
 
         public void Spawn(GameObject prefab)
         {
-            Robot = UnityEngine.Object.Instantiate(prefab, Vector3.zero, Quaternion.identity);
-            Robot.name = prefab.name;
+            var robot = UnityEngine.Object.Instantiate(prefab, Vector3.zero, Quaternion.identity);
+            robot.name = prefab.name;
+            Attach(robot);
+        }
+
+        /// <summary>Use a robot that is already in the scene.</summary>
+        public void Attach(GameObject robot)
+        {
+            Robot = robot;
+            Links.Clear();
+            Frames.Clear();
             foreach (var t in Robot.GetComponentsInChildren<Transform>(true))
                 Frames[t.name] = t;
             foreach (var body in Robot.GetComponentsInChildren<ArticulationBody>(true))
@@ -49,7 +58,12 @@ namespace MRC.Feasibility
                 if (body.isRoot) Root = body;
             }
             if (Root == null) throw new InvalidOperationException("Imported robot has no root ArticulationBody.");
+            // Measured once, while the robot is upright and its transforms are current:
+            // how far the root sits above the robot's lowest collider point.
+            rootAboveLowest = Root.transform.position.y - LowestPoint();
         }
+
+        float rootAboveLowest;
 
         public void CreateGround(float staticFriction = 1.0f, float dynamicFriction = 0.8f)
         {
@@ -77,6 +91,59 @@ namespace MRC.Feasibility
             float lift = clearance - LowestPoint();
             Root.TeleportRoot(Root.transform.position + Vector3.up * lift, Root.transform.rotation);
             Physics.SyncTransforms();
+        }
+
+        /// <summary>
+        /// Move the rover to (x, z), facing `yawDegrees` (0 = +Z, the rover's forward), with its lowest
+        /// point `clearance` above whatever ground is below it (works on uneven terrain).
+        /// </summary>
+        public void PlaceAt(Vector3 position, float yawDegrees, float clearance = 0.05f)
+        {
+            // One teleport, computed from the ground height and the offset measured at spawn.
+            // (After TeleportRoot, Transform and collider positions are not reliably updated until
+            // the next simulation step, so nothing is read back in between.)
+            Physics.SyncTransforms(); // make newly created ground colliders visible to raycasts
+            var ownColliders = new HashSet<Collider>(Robot.GetComponentsInChildren<Collider>());
+            float ground = position.y;
+            float highest = float.NegativeInfinity;
+            foreach (var hit in Physics.RaycastAll(new Vector3(position.x, position.y + 200f, position.z), Vector3.down, 400f))
+                if (!ownColliders.Contains(hit.collider) && hit.point.y > highest) highest = hit.point.y;
+            if (!float.IsNegativeInfinity(highest)) ground = highest;
+            var target = new Vector3(position.x, ground + clearance + rootAboveLowest, position.z);
+            Root.TeleportRoot(target, Quaternion.Euler(0f, yawDegrees, 0f));
+            foreach (var body in Links.Values)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+        }
+
+        /// <summary>Wheel joints on the left / right side of the rover (by position relative to the root).</summary>
+        public bool IsLeftWheel(string wheelJoint) =>
+            Root.transform.InverseTransformPoint(JointBody(wheelJoint).transform.position).x < 0f;
+
+        /// <summary>Driven wheels, their average radius and the left-right track width.</summary>
+        public (List<string> wheels, float trackWidth, float radius) WheelGeometry()
+        {
+            var wheels = JointsWithRole("wheel").Where(j => JointBody(j) != null).ToList();
+            if (wheels.Count == 0) return (wheels, 0.5f, 0.15f);
+            float radius = wheels.Average(WheelRadius);
+            float SideX(string w) => Root.transform.InverseTransformPoint(JointBody(w).transform.position).x;
+            float left = wheels.Where(IsLeftWheel).Select(SideX).DefaultIfEmpty(-0.25f).Average();
+            float right = wheels.Where(w => !IsLeftWheel(w)).Select(SideX).DefaultIfEmpty(0.25f).Average();
+            return (wheels, Mathf.Max(0.1f, right - left), radius);
+        }
+
+        /// <summary>Skid-steer drive: forward speed (m/s) and turn rate (rad/s, positive = left).</summary>
+        public void Drive(float speed, float turnRate, float trackWidth, float wheelRadius, IReadOnlyList<string> wheels)
+        {
+            Vector3 forward = Vector3.ProjectOnPlane(Root.transform.forward, Root.transform.up).normalized;
+            foreach (var wheel in wheels)
+            {
+                float side = IsLeftWheel(wheel) ? -1f : 1f; // left wheels slower when turning left
+                float wheelSpeed = speed + side * turnRate * trackWidth / 2f;
+                SetWheelSpeed(wheel, ForwardSign(wheel, forward) * wheelSpeed / wheelRadius * Mathf.Rad2Deg);
+            }
         }
 
         /// <summary>Wheels: velocity drives. Arm: stiff position drives. Suspension / passive: left free.</summary>
