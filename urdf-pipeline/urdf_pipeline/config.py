@@ -31,6 +31,16 @@ class Config:
     ignore_missing_meshes: bool = False
     joint_roles: dict[str, str] = field(default_factory=dict)
     massless_link_mass_kg: float | None = 0.001
+    fix_inertia: bool = False
+    # Closed linkages URDF cannot describe (four-bars, differentials): follower joint -> how it follows.
+    #   {"bogie_joint": {"leader": "link_joint", "multiplier": "opposite_rotation"}}
+    # multiplier: a number, or "same_rotation" / "opposite_rotation" (sign worked out from the joint axes).
+    joint_couplings: dict[str, dict] = field(default_factory=dict)
+    # Springs/dampers URDF cannot describe (suspension shocks): joint -> settings ("auto" = from the robot's weight).
+    #   {"link_joint": {"stiffness_nm_per_rad": "auto", "damping_nms_per_rad": "auto", "rest_deg": 0, "max_sag_deg": 2}}
+    joint_springs: dict[str, dict] = field(default_factory=dict)
+    # Joints that cannot really move (e.g. a "linkage" whose bars meet at one pin): held fixed at zero in Unity.
+    locked_joints: list[str] = field(default_factory=list)
 
     def check(self) -> Config:
         def fail(message: str) -> None:
@@ -67,6 +77,33 @@ class Config:
             or self.massless_link_mass_kg <= 0
         ):
             fail(f"massless_link_mass_kg must be a positive number (kg) or null; got {self.massless_link_mass_kg!r}.")
+        if not isinstance(self.fix_inertia, bool):
+            fail(f"fix_inertia must be true or false; got {self.fix_inertia!r}.")
+        if not isinstance(self.joint_couplings, dict):
+            fail('joint_couplings must map follower joints to {"leader": ..., "multiplier": ...}.')
+        for follower, spec in self.joint_couplings.items():
+            multiplier = spec.get("multiplier", 1) if isinstance(spec, dict) else None
+            if (not isinstance(spec, dict) or not isinstance(spec.get("leader"), str)
+                    or not (multiplier in ("same_rotation", "opposite_rotation")
+                            or (isinstance(multiplier, (int, float)) and not isinstance(multiplier, bool)))
+                    or not isinstance(spec.get("offset_deg", 0), (int, float))):
+                fail(f'joint_couplings["{follower}"] must look like {{"leader": "joint_name", '
+                     '"multiplier": 1.0 | "same_rotation" | "opposite_rotation", "offset_deg": 0}}.')
+        if not isinstance(self.joint_springs, dict):
+            fail('joint_springs must map joint names to {"stiffness_nm_per_rad": "auto" | number, ...}.')
+        def number(v):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+        for name, spec in self.joint_springs.items():
+            if (not isinstance(spec, dict)
+                    or set(spec) - {"stiffness_nm_per_rad", "damping_nms_per_rad", "rest_deg", "max_sag_deg"}
+                    or not all(v == "auto" or (number(v) and v >= 0)
+                               for k, v in spec.items() if k in ("stiffness_nm_per_rad", "damping_nms_per_rad"))
+                    or not number(spec.get("rest_deg", 0))
+                    or not (number(spec.get("max_sag_deg", 2)) and spec.get("max_sag_deg", 2) > 0)):
+                fail(f'joint_springs["{name}"] must look like {{"stiffness_nm_per_rad": "auto" | number, '
+                     '"damping_nms_per_rad": "auto" | number, "rest_deg": 0, "max_sag_deg": 2}}.')
+        if not isinstance(self.locked_joints, list) or not all(isinstance(j, str) for j in self.locked_joints):
+            fail('locked_joints must be a list of joint names, e.g. ["front_link_joint"].')
         roles = ("wheel", "suspension", "arm", "passive")
         if not isinstance(self.joint_roles, dict) or not all(
             isinstance(k, str) and v in roles for k, v in self.joint_roles.items()
@@ -135,4 +172,19 @@ EXAMPLE_CONFIG = {
     "joint_roles": {},
     "_massless_link_mass_kg": "Unity gives links without <inertial> a mass of 1 kg; prepare gives them this tiny mass instead (null = leave them alone).",
     "massless_link_mass_kg": 0.001,
+    "_fix_inertia": "true = replace inertia values that disagree with the link's collision mesh by more than 3x "
+                    "(computed from the mesh, keeping the URDF mass and centre of mass). Changes physics data; off by default.",
+    "fix_inertia": False,
+    "_joint_couplings": "Optional: linkages URDF cannot describe. Example: keep a bogie parallel to the body in a "
+                        "parallel four-bar: {\"bogie_joint\": {\"leader\": \"front_link_joint\", \"multiplier\": \"opposite_rotation\"}}. "
+                        "URDF <mimic> joints are added automatically.",
+    "joint_couplings": {},
+    "_joint_springs": "Optional: springs/dampers URDF cannot describe, e.g. a suspension shock. \"auto\" works out the "
+                      "stiffness that holds the joint within max_sag_deg of rest_deg under the robot's weight, "
+                      "and critical damping. Example: {\"link_joint\": {\"stiffness_nm_per_rad\": \"auto\", "
+                      "\"damping_nms_per_rad\": \"auto\", \"rest_deg\": 0, \"max_sag_deg\": 2}}",
+    "joint_springs": {},
+    "_locked_joints": "Optional: joints that should not move in simulation (held fixed at their zero position in Unity; "
+                      "the URDF itself is not changed). Example: [\"front_link_joint\"]",
+    "locked_joints": [],
 }

@@ -12,9 +12,9 @@ namespace MRC.Feasibility.Tests
 {
     public class TerrainCourseTests
     {
-        const float Dt = EnvironmentGenerator.FixedTimestep;
+        static readonly float Dt = PhysicsTuning.Timestep;
         const float Speed = 0.5f;               // m/s
-        const float LaneTimeout = 45f;          // s
+        const float LaneTimeout = 60f;          // s (20 m at 0.5 m/s is 40 s; slack for slow obstacles)
         const float DesertSeconds = 90f;
         const float StuckWindow = 6f;           // s without 10 cm of progress = stuck
 
@@ -33,7 +33,11 @@ namespace MRC.Feasibility.Tests
         public void LoadRobot()
         {
             (variant, manifest, prefab) = TestRobot.Load();
-            results = new JObject { ["variant"] = variant, ["speed_mps"] = Speed, ["lanes"] = new JObject() };
+            results = new JObject
+            {
+                ["variant"] = variant, ["speed_mps"] = Speed, ["physics_settings"] = PhysicsTuning.Describe(),
+                ["lanes"] = new JObject(),
+            };
         }
 
         [OneTimeTearDown]
@@ -88,9 +92,12 @@ namespace MRC.Feasibility.Tests
         {
             rig = new RoverRig(manifest);
             rig.Spawn(prefab);
+            PhysicsTuning.ApplySolverIterations(rig);
             rig.ConfigureDrives();
             rig.PlaceAt(start, yaw);
-            RoverRig.Step(200, Dt); // settle 2 s
+            rig.Simulate(Mathf.RoundToInt(2f / Dt), Dt); // settle 2 s
+            var stepTimer = System.Diagnostics.Stopwatch.StartNew();
+            int simulatedSteps = 0;
 
             var (wheels, track, radius) = rig.WheelGeometry();
             Vector3 dir = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
@@ -112,7 +119,8 @@ namespace MRC.Feasibility.Tests
                 float turn = Mathf.Clamp(2f * (heading - desired) * Mathf.Deg2Rad, -0.6f, 0.6f); // + = turn left
                 rig.Drive(Speed, turn, track, radius, wheels);
 
-                RoverRig.Step(1, Dt);
+                rig.Simulate(1, Dt);
+                simulatedSteps++;
                 t += Dt;
                 if (rig.AnyNaN()) { nan = true; break; }
                 pos = rig.Root.transform.position;
@@ -127,9 +135,11 @@ namespace MRC.Feasibility.Tests
                 else if (t - lastProgressTime > StuckWindow) { stuck = true; break; }
             }
 
+            stepTimer.Stop();
             float tilt = nan ? float.NaN : rig.TiltDegrees();
             return new JObject
             {
+                ["ms_per_step"] = simulatedSteps > 0 ? Round((float)(stepTimer.Elapsed.TotalMilliseconds / simulatedSteps), 4) : 0f,
                 ["crossed"] = reached,
                 ["stuck"] = stuck,
                 ["flipped"] = !nan && tilt > 70f,

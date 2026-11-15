@@ -3,7 +3,8 @@
 #   URDF -> urdf_pipeline prepare -> Unity batch import -> Unity PlayMode physics tests
 #
 # Usage: bash unity/run_feasibility.sh [variant ...]
-#   variants: default collapsed split-meshes convex-unity   (default: default collapsed split-meshes)
+#   variants: tuned default collapsed split-meshes convex-unity fixed-inertia   (default: tuned default collapsed split-meshes)
+#   tuned = urdf-pipeline/config/osu_rover.json (corrected inertia + four-bar suspension)
 # Environment:
 #   URDF=/path/robot.urdf     (default: urdf-pipeline/input/rover.urdf)
 #   UNITY_PATH=/path/Unity    (default: Unity Hub install of the project's editor version)
@@ -17,7 +18,7 @@ RESULTS="$PROJECT/FeasibilityResults"
 URDF="${URDF:-$REPO/urdf-pipeline/input/rover.urdf}"
 PYTHON="${PYTHON:-python3}"
 VARIANTS=("$@")
-[[ ${#VARIANTS[@]} -eq 0 ]] && VARIANTS=(default collapsed split-meshes)
+[[ ${#VARIANTS[@]} -eq 0 ]] && VARIANTS=(tuned default collapsed split-meshes)
 
 VERSION="$(sed -n 's/^m_EditorVersion: //p' "$PROJECT/ProjectSettings/ProjectVersion.txt" | tr -d '\r')"
 if [[ -z "${UNITY_PATH:-}" ]]; then
@@ -39,6 +40,8 @@ for variant in "${VARIANTS[@]}"; do
     collapsed)    prep=(--collapse-frames always); convex=vhacd ;;
     split-meshes) prep=(--split-meshes);           convex=vhacd ;;
     convex-unity) prep=();                        convex=unity ;;
+    fixed-inertia) prep=(--fix-inertia);           convex=vhacd ;;
+    tuned)        prep=(--config "$REPO/urdf-pipeline/config/osu_rover.json"); convex=vhacd ;;
     *) echo "Unknown variant: $variant" >&2; continue ;;
   esac
   out="$RESULTS/$variant"; prepared="$REPO/urdf-pipeline/output/$variant"

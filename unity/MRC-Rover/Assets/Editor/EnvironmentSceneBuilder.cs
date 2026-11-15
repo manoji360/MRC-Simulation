@@ -3,7 +3,7 @@
 // means the scene is tiny and nothing generated needs to be committed.
 //
 // Menu: MRC > Create Test Environment Scene
-// Batch: Unity -batchmode -projectPath unity/MRC-Rover -executeMethod EnvironmentSceneBuilder.CreateFromCommandLine [-variant default]
+// Batch: Unity -batchmode -projectPath unity/MRC-Rover -executeMethod EnvironmentSceneBuilder.CreateFromCommandLine [-variant tuned]
 using System.Linq;
 using MRC.Environment;
 using MRC.Feasibility;
@@ -19,14 +19,14 @@ public static class EnvironmentSceneBuilder
     public static void CreateFromMenu()
     {
         if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-        Create("default");
+        Create("tuned");
         EditorSceneManager.OpenScene(ScenePath);
     }
 
     public static void CreateFromCommandLine()
     {
         int code = 0;
-        try { Create(FeasibilityPaths.Arg("-variant") ?? "default"); }
+        try { Create(FeasibilityPaths.Arg("-variant") ?? "tuned"); }
         catch (System.Exception e) { Debug.LogException(e); code = 1; }
         EditorApplication.Exit(code);
     }

@@ -16,12 +16,14 @@
 param(
     # convex-unity (Unity's own convex hulls instead of VHACD) is a comparison only: it loses
     # most colliders on the OSU rover, so it is not in the default list.
-    [string[]]$Variants = @("default", "collapsed", "split-meshes"),
+    [string[]]$Variants = @("tuned", "default", "collapsed", "split-meshes"),
     [string]$Urdf,
     [string]$UnityPath,
     [string]$Python
 )
 $ErrorActionPreference = "Stop"
+# `powershell -File ... -Variants a,b` passes "a,b" as one string; accept both forms.
+$Variants = @($Variants | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 $repo    = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $PSScriptRoot "MRC-Rover"
@@ -34,6 +36,9 @@ $variantSettings = @{
     "collapsed"    = @{ Prepare = @("--collapse-frames", "always"); Convex = "vhacd" }
     "split-meshes" = @{ Prepare = @("--split-meshes");              Convex = "vhacd" }
     "convex-unity" = @{ Prepare = @();                              Convex = "unity" }
+    "fixed-inertia" = @{ Prepare = @("--fix-inertia");              Convex = "vhacd" }
+    # The OSU rover with its known URDF problems corrected (mesh-derived inertia, four-bar suspension):
+    "tuned"        = @{ Prepare = @("--config", (Join-Path $repo "urdf-pipeline\config\osu_rover.json")); Convex = "vhacd" }
 }
 
 function Find-Unity {

@@ -1,0 +1,12 @@
+{
+  "_help": "Pipeline settings for the OSU Robotics Club rover (Rover_2026_2027). Use: mrc-urdf prepare rover.urdf --config urdf-pipeline/config/osu_rover.json",
+  "_fix_inertia": "The URDF's drivetrain/body/camera inertias are 3-190x larger than their shapes allow; 15 are physically impossible (larger than with all the mass at the part's outer edge). CAD export error; reported upstream. Replace them with mesh-derived values.",
+  "fix_inertia": true,
+  "_locked_joints": "Each front side has a 'four-bar' (URDF comment: 'Four Bars Don't exist in URDF's'), but the commented-out back bogie joint puts the back bar's bogie pin at exactly the same point as the front bar's (to 6 decimals, both sides). Two bars meeting at one pin form a rigid triangle with the body: the links cannot move and the bogie pivots on that pin. So the link joints are locked; the bogie joints stay free (URDF limits +-15 deg, damping 2.0), like the rear bogie.",
+  "locked_joints": [
+    "rover_front_left_link_joint",
+    "rover_front_right_link_joint",
+    "rover_back_left_link_joint",
+    "rover_back_right_link_joint"
+  ]
+}

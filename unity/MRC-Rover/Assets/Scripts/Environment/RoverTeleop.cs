@@ -2,11 +2,12 @@ using System.Collections.Generic;
 using System.Linq;
 using MRC.Feasibility;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace MRC.Environment
 {
     /// <summary>
-    /// Keyboard driving (legacy Input Manager):
+    /// Keyboard driving (Input System package):
     ///   W/S or Up/Down  forward / reverse      A/D or Left/Right  turn (skid steer)
     ///   Left Shift      faster                 Space              stop
     ///   1-9             select arm joint       Q / E              move selected arm joint
@@ -47,20 +48,21 @@ namespace MRC.Environment
 
         void Update()
         {
-            if (Rig == null) return;
-            float forward = Axis(KeyCode.W, KeyCode.UpArrow) - Axis(KeyCode.S, KeyCode.DownArrow);
-            float turn = Axis(KeyCode.A, KeyCode.LeftArrow) - Axis(KeyCode.D, KeyCode.RightArrow);
-            float scale = Input.GetKey(KeyCode.LeftShift) ? boost : 1f;
-            CommandSpeed = Input.GetKey(KeyCode.Space) ? 0f : forward * maxSpeed * scale;
-            CommandTurn = Input.GetKey(KeyCode.Space) ? 0f : turn * maxTurnRate;
+            var kb = Keyboard.current;
+            if (Rig == null || kb == null) return;
+            float forward = Axis(kb, Key.W, Key.UpArrow) - Axis(kb, Key.S, Key.DownArrow);
+            float turn = Axis(kb, Key.A, Key.LeftArrow) - Axis(kb, Key.D, Key.RightArrow);
+            float scale = kb.leftShiftKey.isPressed ? boost : 1f;
+            CommandSpeed = kb.spaceKey.isPressed ? 0f : forward * maxSpeed * scale;
+            CommandTurn = kb.spaceKey.isPressed ? 0f : turn * maxTurnRate;
             if (wheels.Count > 0) Rig.Drive(CommandSpeed, CommandTurn, trackWidth, wheelRadius, wheels);
 
             for (int i = 0; i < Mathf.Min(9, ArmJoints.Count); i++)
-                if (Input.GetKeyDown(KeyCode.Alpha1 + i)) SelectedArmJoint = i;
+                if (kb[Key.Digit1 + i].wasPressedThisFrame) SelectedArmJoint = i;
             if (ArmJoints.Count > 0)
             {
                 string joint = ArmJoints[SelectedArmJoint];
-                float delta = (Axis(KeyCode.E) - Axis(KeyCode.Q)) * armDegreesPerSecond * Time.deltaTime;
+                float delta = (Axis(kb, Key.E) - Axis(kb, Key.Q)) * armDegreesPerSecond * Time.deltaTime;
                 if (delta != 0f)
                 {
                     var drive = Rig.Joints[joint]["unity_drive"];
@@ -68,19 +70,22 @@ namespace MRC.Environment
                     armTargets[joint] = Mathf.Clamp(armTargets[joint] + delta, lo, hi);
                     Rig.SetArmTarget(joint, armTargets[joint]);
                 }
-                if (Input.GetKeyDown(KeyCode.Z))
+                if (kb.zKey.wasPressedThisFrame)
                     foreach (var j in ArmJoints) { armTargets[j] = 0f; Rig.SetArmTarget(j, 0f); }
             }
 
-            if (Input.GetKeyDown(KeyCode.R)) Teleport(resetPoint, resetYaw, Location);
-            if (Input.GetKeyDown(KeyCode.T) && Info.Lanes.Count > 0)
+            if (kb.rKey.wasPressedThisFrame) Teleport(resetPoint, resetYaw, Location);
+            if (kb.tKey.wasPressedThisFrame && Info.Lanes.Count > 0)
             {
                 laneIndex = (laneIndex + 1) % Info.Lanes.Count;
                 var lane = Info.Lanes[laneIndex];
                 Teleport(lane.Start, 0f, $"Lane: {lane.Name} ({lane.Description})");
             }
-            if (Input.GetKeyDown(KeyCode.G) && Info.Terrain != null) Teleport(Info.DesertStart, 90f, "Utah desert");
+            if (kb.gKey.wasPressedThisFrame && Info.Terrain != null) Teleport(Info.DesertStart, 90f, "Utah desert");
         }
+
+        // Linkages (four-bars) follow their leader joint every physics step.
+        void FixedUpdate() => Rig?.UpdateCouplings();
 
         public void Teleport(Vector3 point, float yaw, string label)
         {
@@ -90,6 +95,6 @@ namespace MRC.Environment
             Rig.PlaceAt(point, yaw);
         }
 
-        static float Axis(params KeyCode[] keys) => keys.Any(Input.GetKey) ? 1f : 0f;
+        static float Axis(Keyboard kb, params Key[] keys) => keys.Any(k => kb[k].isPressed) ? 1f : 0f;
     }
 }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace MRC.Environment
 {
@@ -20,13 +21,20 @@ namespace MRC.Environment
         void LateUpdate()
         {
             if (Target == null) return;
-            if (Input.GetKeyDown(KeyCode.C)) chase = !chase;
-            if (Input.GetMouseButton(1))
+            var kb = Keyboard.current;
+            var mouse = Mouse.current;
+            if (kb != null && kb.cKey.wasPressedThisFrame) chase = !chase;
+            if (mouse != null)
             {
-                yaw += Input.GetAxis("Mouse X") * 4f;
-                pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f, -5f, 80f);
+                if (mouse.rightButton.isPressed)
+                {
+                    Vector2 delta = mouse.delta.ReadValue();     // pixels this frame
+                    yaw += delta.x * 0.2f;
+                    pitch = Mathf.Clamp(pitch - delta.y * 0.15f, -5f, 80f);
+                }
+                float notches = mouse.scroll.ReadValue().y / 120f; // one wheel notch = 120 on Windows
+                distance = Mathf.Clamp(distance * (1f - Mathf.Clamp(notches, -3f, 3f) * 0.1f), minDistance, maxDistance);
             }
-            distance = Mathf.Clamp(distance * (1f - Input.mouseScrollDelta.y * 0.1f), minDistance, maxDistance);
 
             float baseYaw = chase ? Target.eulerAngles.y : 0f;
             var rotation = Quaternion.Euler(pitch, baseYaw + yaw, 0f);

@@ -22,7 +22,8 @@ from .mesh_split import needs_split, split_mesh, triangles_match
 from .meshes import chunk_uri, companion_files, is_absolute, mesh_uses, output_key, resolve_mesh
 from .model import Robot
 from .parse import element_to_string, load_urdf, validate, write_urdf
-from .physics import physics_block, physics_issues, total_mass
+from .physics import joint_couplings, joint_springs, locked_joints, physics_block, physics_issues, total_mass
+from .mass_properties import PLAUSIBLE_RATIO, inertia_plausibility, replace_inertia
 from .split import build_part_robots, plan_split, single_part_plan
 from .stl import read_stl, triangle_count, write_stl
 
@@ -82,8 +83,9 @@ def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
 
     uris = sorted({u.uri for u in mesh_uses(robot)})
     result.meshes_total = len(uris)
+    resolved: dict[str, Path | None] = {}
     for uri in uris:
-        path = resolve_mesh(uri, urdf_path.parent, _mesh_roots(config))
+        path = resolved[uri] = resolve_mesh(uri, urdf_path.parent, _mesh_roots(config))
         if is_absolute(uri):
             result.absolute_meshes.append(uri)
         elif output_key(uri) is None:
@@ -111,6 +113,17 @@ def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
             result.physics.insert(0, ("info", f"{len(no_inertial)} link(s) have no <inertial>. Unity's URDF Importer would "
                                               "give each a mass of 1 kg; prepare gives them a "
                                               f"{config.massless_link_mass_kg * 1000:g} g placeholder instead."))
+        implausible = {n: r for n, r in inertia_plausibility(robot, resolved).items() if not r["plausible"]}
+        if implausible:
+            worst = sorted(implausible.items(), key=lambda kv: -max(kv[1]["ratio"], 1 / kv[1]["ratio"]))
+            listed = ", ".join(f"{n} ({r['ratio']:g}x)" for n, r in worst[:8]) + (", and others" if len(worst) > 8 else "")
+            impossible = sum(r["impossible"] for r in implausible.values())
+            result.physics.insert(0, ("warn", f"{len(implausible)} link(s) have inertia that disagrees with their "
+                                              f"shape by more than {PLAUSIBLE_RATIO:g}x (URDF / shape): {listed}. "
+                                              f"{impossible} of them are physically impossible (larger than if all the "
+                                              "mass sat at the part's outer edge). "
+                                              "Probably a CAD export error; it changes how the robot turns and rolls. "
+                                              "Fix it in the URDF, or use --fix-inertia."))
         missing_axis = joints_missing_axis(robot)
         if missing_axis:
             result.physics.insert(0, ("info", f"{len(missing_axis)} moving joint(s) have no <axis> ({', '.join(missing_axis)}). "
@@ -287,6 +300,21 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
     if added_axes:
         log(f"Unity compatibility: wrote the default axis explicitly on {len(added_axes)} joint(s)")
 
+    # Optional: replace implausible inertia with values from the collision mesh. Applied to a
+    # "physics source" copy as well, so the manifest's expected Unity values match what is written.
+    inertia_check = inertia_plausibility(original, resolved)
+    inertia_fixed: dict[str, str] = {}
+    physics_source = original.copy()
+    if config.fix_inertia:
+        for name, info in inertia_check.items():
+            if info["plausible"]:
+                continue
+            inertia_fixed[name] = element_to_string(robot.links[name].element.find("inertial"))
+            replace_inertia(robot.links[name], info["mesh_inertia_about_centroid"])
+            replace_inertia(physics_source.links[name], info["mesh_inertia_about_centroid"])
+        if inertia_fixed:
+            log(f"Replaced implausible inertia on {len(inertia_fixed)} link(s) with values from their collision meshes")
+
     mesh_chunks: list[dict] = []
     mesh_files: dict = {}
     if config.split_meshes:
@@ -369,7 +397,12 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
         "mesh_chunks": mesh_chunks,
         "reference_poses": {name: pose_blocks_from_matrix(t) for name, t in poses.items()},
         "physics": {
-            **physics_block(original, config.joint_roles),
+            **physics_block(physics_source, config.joint_roles),
+            "couplings": (couplings := joint_couplings(original, config.joint_couplings)),
+            "springs": joint_springs(physics_source, config.joint_springs, config.joint_roles, couplings),
+            "locked_joints": locked_joints(original, config.locked_joints),
+            "inertia_check": {name: {k: v for k, v in info.items() if k != "mesh_inertia_about_centroid"}
+                              for name, info in inertia_check.items()},
             "unity_expected_mass_kg": round(
                 total_mass(original) + len(placeholder_links) * (config.massless_link_mass_kg or 0.0), 6),
         },
@@ -377,6 +410,8 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
             "added_default_axis": added_axes,
             "placeholder_inertial": {"mass_kg": config.massless_link_mass_kg, "links": placeholder_links},
         },
+        # Original <inertial> XML of links whose inertia was replaced (--fix-inertia); rebuild restores it.
+        "inertia_from_meshes": inertia_fixed,
         "warnings": warnings,
     }
     manifest_path = out_dir / FILE_NAME

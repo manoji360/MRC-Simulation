@@ -14,7 +14,7 @@ namespace MRC.Feasibility.Tests
 {
     public class RoverPhysicsTests
     {
-        const float Dt = 0.01f;                // 100 Hz physics
+        static readonly float Dt = PhysicsTuning.Timestep;   // 100 Hz unless -dt is given
         const float SettleSeconds = 5f;
         const float DriveSpeed = 0.5f;         // m/s
         const float DriveSeconds = 10f;
@@ -33,7 +33,7 @@ namespace MRC.Feasibility.Tests
         public void LoadRobot()
         {
             (variant, manifest, prefab) = TestRobot.Load();
-            results = new JObject { ["variant"] = variant, ["dt"] = Dt };
+            results = new JObject { ["variant"] = variant, ["dt"] = Dt, ["physics_settings"] = PhysicsTuning.Describe() };
         }
 
         [OneTimeTearDown]
@@ -49,6 +49,7 @@ namespace MRC.Feasibility.Tests
             Physics.simulationMode = SimulationMode.Script;
             rig = new RoverRig(manifest);
             rig.Spawn(prefab);
+            PhysicsTuning.ApplySolverIterations(rig);
             rig.CreateGround();
         }
 
@@ -63,7 +64,7 @@ namespace MRC.Feasibility.Tests
         {
             rig.ConfigureDrives();
             rig.PlaceAboveGround(0.2f);
-            RoverRig.Step(Mathf.RoundToInt(SettleSeconds / Dt), Dt);
+            rig.Simulate(Mathf.RoundToInt(SettleSeconds / Dt), Dt);
         }
 
         static Vector3 V3(JToken t) => new Vector3((float)t[0], (float)t[1], (float)t[2]);
@@ -131,7 +132,7 @@ namespace MRC.Feasibility.Tests
             int steps = Mathf.RoundToInt(SettleSeconds / Dt);
             for (int i = 0; i < steps; i++)
             {
-                RoverRig.Step(1, Dt);
+                rig.Simulate(1, Dt);
                 if (rig.AnyNaN()) { nan = true; break; }
                 peakSpeed = Mathf.Max(peakSpeed, rig.MaxLinkSpeed());
             }
@@ -140,17 +141,59 @@ namespace MRC.Feasibility.Tests
                 if (rig.JointBody(joint) != null) suspension[joint] = R(rig.JointDegrees(joint), 2);
             float finalSpeed = nan ? float.NaN : rig.MaxLinkSpeed();
             float tilt = nan ? float.NaN : rig.TiltDegrees();
+            // How well each linkage (e.g. four-bar) holds: follower angle vs multiplier * leader + offset.
+            var couplings = new JObject();
+            float worstCoupling = 0f;
+            foreach (var c in rig.Couplings)
+            {
+                float error = Mathf.Abs(rig.JointDegrees(c.Follower) - (c.Multiplier * rig.JointDegrees(c.Leader) + c.OffsetDegrees));
+                worstCoupling = Mathf.Max(worstCoupling, error);
+                couplings[c.Follower] = new JObject { ["leader"] = c.Leader, ["multiplier"] = c.Multiplier, ["error_deg"] = R(error, 3),
+                                                     ["drive_torque_nm"] = R(rig.JointBody(c.Follower).driveForce[0], 3),
+                                                     ["reaction_moved_to"] = c.ReactionTo != null ? c.ReactionTo.name : null };
+            }
+            // Springs (suspension shocks): how far each sags from its rest angle under the rover's weight.
+            var springs = new JObject();
+            float worstTravelUsed = 0f;
+            foreach (var sp in rig.Springs)
+            {
+                float sag = Mathf.Abs(rig.JointDegrees(sp.Joint) - sp.RestDegrees);
+                // Fraction of the travel from rest to the joint stop on the side it sagged towards.
+                var limits = rig.Joints[sp.Joint]["unity_drive"];
+                float stop = rig.JointDegrees(sp.Joint) < sp.RestDegrees
+                    ? Mathf.Abs(sp.RestDegrees - ((float?)limits["lower_limit"] ?? -180f))
+                    : Mathf.Abs(((float?)limits["upper_limit"] ?? 180f) - sp.RestDegrees);
+                float travelUsed = stop > 0f ? sag / stop : 1f;
+                worstTravelUsed = Mathf.Max(worstTravelUsed, travelUsed);
+                springs[sp.Joint] = new JObject { ["rest_deg"] = sp.RestDegrees, ["sag_deg"] = R(sag, 3),
+                                                  ["design_max_sag_deg"] = sp.MaxSagDegrees, ["sag_vs_design"] = R(sag / sp.MaxSagDegrees, 2),
+                                                  ["travel_used"] = R(travelUsed, 2), ["stiffness_nm_per_rad"] = sp.StiffnessPerRad,
+                                                  ["spring_torque_nm"] = R(rig.JointBody(sp.Joint).driveForce[0], 3) };
+            }
             results["settle"] = new JObject
             {
                 ["seconds"] = SettleSeconds, ["nan"] = nan,
                 ["peak_link_speed_mps"] = R(peakSpeed), ["final_max_link_speed_mps"] = R(finalSpeed),
+                ["fastest_link"] = nan ? null : rig.FastestLink(),
+                ["root_speed_mps"] = nan ? float.NaN : R(rig.Root.linearVelocity.magnitude),
                 ["chassis_tilt_deg"] = R(tilt, 2),
                 ["root_height_m"] = R(rig.Root.transform.position.y),
                 ["suspension_and_passive_joint_deg"] = suspension,
+                ["couplings"] = couplings,
+                ["worst_coupling_error_deg"] = R(worstCoupling, 3),
+                ["springs"] = springs,
+                ["linkage_collider_pairs_ignored"] = rig.IgnoredLinkagePairs,
+                ["coupling_reaction_sign"] = RoverRig.CouplingReactionSign,
+                ["locked_joints"] = new JArray(rig.LockedJoints),
             };
             Assert.IsFalse(nan, "Physics produced NaN (the simulation exploded).");
             Assert.Less(finalSpeed, 0.05f, "The rover is still moving after settling.");
             Assert.Less(tilt, 5f, "The chassis is tilted after settling on flat ground.");
+            Assert.Less(worstCoupling, 1f, "A coupled linkage (four-bar) drifted more than 1 degree from its leader.");
+            // "auto" springs are an estimate (a six-wheeler on flat ground is over-constrained, so how the weight
+            // splits between a bogie's wheels - and the sag - varies). The firm requirement: the suspension
+            // rides on its spring, not on its joint stop.
+            Assert.Less(worstTravelUsed, 0.5f, "A suspension spring sagged more than half-way to its joint stop (spring too soft?).");
         }
 
         [Test, Order(4)]
@@ -171,7 +214,7 @@ namespace MRC.Feasibility.Tests
             int steps = Mathf.RoundToInt(DriveSeconds / Dt);
             for (int i = 0; i < steps && !nan; i++)
             {
-                RoverRig.Step(1, Dt);
+                rig.Simulate(1, Dt);
                 nan = rig.AnyNaN();
             }
             Vector3 moved = rig.Root.transform.position - start;
@@ -210,10 +253,10 @@ namespace MRC.Feasibility.Tests
                 float upper = (float?)drive["upper_limit"] ?? float.MaxValue;
                 float target = Mathf.Min(ArmStepDegrees, upper - 1f);
                 rig.SetArmTarget(joint, target);
-                RoverRig.Step(steps, Dt);
+                rig.Simulate(steps, Dt);
                 float reached = rig.JointDegrees(joint);
                 rig.SetArmTarget(joint, 0f);
-                RoverRig.Step(steps, Dt);
+                rig.Simulate(steps, Dt);
                 float back = rig.JointDegrees(joint);
                 float error = Mathf.Max(Mathf.Abs(reached - target), Mathf.Abs(back));
                 worst = Mathf.Max(worst, error);
@@ -230,11 +273,11 @@ namespace MRC.Feasibility.Tests
             var wheels = rig.JointsWithRole("wheel").Where(j => rig.JointBody(j) != null).ToList();
             Vector3 forward = Vector3.ProjectOnPlane(rig.Root.transform.forward, Vector3.up).normalized;
             foreach (var wheel in wheels) rig.SetWheelSpeed(wheel, rig.ForwardSign(wheel, forward) * 90f);
-            RoverRig.Step(100, Dt); // warm up
+            rig.Simulate(100, Dt); // warm up
 
             const int samples = 1000;
             var timer = Stopwatch.StartNew();
-            RoverRig.Step(samples, Dt);
+            rig.Simulate(samples, Dt);
             timer.Stop();
             double msPerStep = timer.Elapsed.TotalMilliseconds / samples;
             double realTimeFactor = (Dt * 1000.0) / msPerStep;

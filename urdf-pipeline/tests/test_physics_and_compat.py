@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from builders import ROVER_EXTRAS, ROVER_LIKE_TOTAL_MASS, joint, link, robot, rover_like_items
+from builders import ARM_LIMIT, ROVER_EXTRAS, ROVER_LIKE_TOTAL_MASS, joint, link, robot, rover_like_items
 from urdf_pipeline.compat import (
     add_default_axes, add_placeholder_inertials, joints_missing_axis, links_missing_inertial,
     remove_added_axes, remove_placeholder_inertials,
@@ -83,6 +83,31 @@ def test_placeholder_inertials_are_added_and_removed(rover):
     assert diff_robots(original, rover) == []
 
 
+def test_joint_couplings_from_config_and_mimic(rover):
+    from urdf_pipeline.errors import PipelineError
+    from urdf_pipeline.physics import joint_couplings
+
+    # left and right bogies both turn about +Y: "opposite_rotation" -> -1, "same_rotation" -> +1
+    c = joint_couplings(rover, {"right_bogie_joint": {"leader": "left_bogie_joint", "multiplier": "opposite_rotation"}})
+    assert c == [{"follower": "right_bogie_joint", "leader": "left_bogie_joint", "multiplier": -1.0,
+                  "offset": 0.0, "source": "config"}]
+    assert joint_couplings(rover, {"rear_bogie_joint": {"leader": "left_bogie_joint",
+                                                         "multiplier": "same_rotation"}})[0]["multiplier"] == 1.0
+    with pytest.raises(PipelineError, match="parallel axes"):   # arm_1 turns about X, bogies about Y
+        joint_couplings(rover, {"arm_1_joint": {"leader": "left_bogie_joint", "multiplier": "same_rotation"}})
+    with pytest.raises(PipelineError, match="not a moving joint"):
+        joint_couplings(rover, {"arm_mount": {"leader": "left_bogie_joint", "multiplier": 1}})
+
+    mimic = parse_urdf_string(robot("m", [link("a", 1), link("b", 1), link("c", 1),
+                                          joint("j1", "revolute", "a", "b", limit=ARM_LIMIT),
+                                          '<joint name="j2" type="revolute"><parent link="a"/><child link="c"/>'
+                                          '<axis xyz="1 0 0"/><limit lower="-1" upper="1" effort="1" velocity="1"/>'
+                                          '<mimic joint="j1" multiplier="-0.5" offset="0.1"/></joint>']))
+    (m,) = joint_couplings(mimic)
+    assert m["follower"] == "j2" and m["multiplier"] == -0.5 and m["source"] == "urdf_mimic"
+    assert m["offset"] == pytest.approx(math.degrees(0.1), abs=1e-6)  # radians -> Unity degrees
+
+
 def test_frames_collapse_and_restore(rover):
     original = rover.copy()
     assert frame_only_links(rover) == [f"camera_frame_{i}" for i in range(4)]  # imu has mass, jaws has a shape
@@ -93,3 +118,37 @@ def test_frames_collapse_and_restore(rover):
     restore_frames(rover, entries)
     assert diff_robots(original, rover) == []
     assert max_difference(world_transforms(original), world_transforms(rover)) == 0.0
+
+
+def test_joint_springs_auto_from_weight():
+    from urdf_pipeline.errors import PipelineError
+    from urdf_pipeline.physics import joint_springs
+
+    # 10 kg body; a swing arm (pivot about X) whose wheel sits 0.2 m ahead (+Y) of the pivot, plus a fixed wheel.
+    text = robot("s", [link("body", 8), link("arm", 0.5), link("arm_wheel", 0.5), link("rear_wheel", 1),
+                       joint("swing", "revolute", "body", "arm", xyz="0 0 0", axis="1 0 0",
+                             limit='lower="-0.3" upper="0.3" effort="10" velocity="1"'),
+                       joint("arm_wheel_joint", "continuous", "arm", "arm_wheel", xyz="0 0.2 -0.1", axis="1 0 0"),
+                       joint("rear_wheel_joint", "continuous", "body", "rear_wheel", xyz="0 -0.3 -0.1", axis="1 0 0")])
+    r = parse_urdf_string(text)
+    (s,) = joint_springs(r, {"swing": {"max_sag_deg": 2}})
+    load = 10 * 9.81 / 2                      # 1 of 2 wheels below the joint
+    assert s["auto_basis"]["lever_m"] == pytest.approx(0.2)
+    # The wheel sits at (y=0.2, z=-0.1): the weight pushes the arm to -2 deg, where the lever is 0.2cos2 - 0.1sin2.
+    sag = math.radians(2)
+    assert s["auto_basis"]["sag_direction_deg"] == pytest.approx(-2)
+    assert s["stiffness_nm_per_rad"] == pytest.approx(load * (0.2 * math.cos(sag) - 0.1 * math.sin(sag)) / sag, rel=1e-3)
+    assert s["damping_nms_per_rad"] == pytest.approx(2 * math.sqrt(s["stiffness_nm_per_rad"] * (load / 9.81) * 0.04), rel=1e-3)
+    fixed = joint_springs(r, {"swing": {"stiffness_nm_per_rad": 100, "damping_nms_per_rad": 5}})[0]
+    assert (fixed["stiffness_nm_per_rad"], fixed["damping_nms_per_rad"], fixed["auto_basis"]) == (100, 5, None)
+    with pytest.raises(PipelineError, match="not a revolute/continuous joint"):
+        joint_springs(r, {"no_such_joint": {}})
+
+
+def test_locked_joints_validated(rover):
+    from urdf_pipeline.errors import PipelineError
+    from urdf_pipeline.physics import locked_joints
+
+    assert locked_joints(rover, ["back_link_joint"]) == ["back_link_joint"]
+    with pytest.raises(PipelineError, match="not a moving joint"):
+        locked_joints(rover, ["arm_mount"])

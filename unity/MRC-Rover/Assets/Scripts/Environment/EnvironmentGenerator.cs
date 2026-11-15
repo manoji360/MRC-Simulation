@@ -24,7 +24,7 @@ namespace MRC.Environment
     public class EnvironmentGenerator : MonoBehaviour
     {
         [Tooltip("Folder under Assets/Robots/ created by RoverImport (run_feasibility or the import command).")]
-        public string robotVariant = "default";
+        public string robotVariant = "tuned";
         public bool buildDesert = true;
         public bool buildCourse = true;
         public bool spawnRover = true;

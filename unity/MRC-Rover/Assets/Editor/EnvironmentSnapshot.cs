@@ -1,6 +1,6 @@
 // Renders preview images of the generated test environment (no Play mode needed).
 // Batch (needs graphics, so no -nographics):
-//   Unity -batchmode -projectPath unity/MRC-Rover -executeMethod EnvironmentSnapshot.CaptureFromCommandLine [-variant default]
+//   Unity -batchmode -projectPath unity/MRC-Rover -executeMethod EnvironmentSnapshot.CaptureFromCommandLine [-variant tuned]
 // Images go to FeasibilityResults/screenshots/.
 using System.IO;
 using System.Linq;
@@ -13,12 +13,12 @@ using UnityEngine;
 public static class EnvironmentSnapshot
 {
     [MenuItem("MRC/Capture Environment Screenshots")]
-    public static void CaptureFromMenu() => Capture(FeasibilityPaths.Arg("-variant") ?? "default");
+    public static void CaptureFromMenu() => Capture(FeasibilityPaths.Arg("-variant") ?? "tuned");
 
     public static void CaptureFromCommandLine()
     {
         int code = 0;
-        try { Capture(FeasibilityPaths.Arg("-variant") ?? "default"); }
+        try { Capture(FeasibilityPaths.Arg("-variant") ?? "tuned"); }
         catch (System.Exception e) { Debug.LogException(e); code = 1; }
         EditorApplication.Exit(code);
     }

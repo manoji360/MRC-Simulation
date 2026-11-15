@@ -48,6 +48,13 @@ def rebuild_robot(manifest: dict, out_dir: Path) -> Robot:
     compat = manifest.get("unity_compat", {})
     remove_added_axes(robot, compat.get("added_default_axis", []))
     remove_placeholder_inertials(robot, compat.get("placeholder_inertial", {}).get("links", []))
+    # 2c. --fix-inertia: put the original <inertial> blocks back
+    for name, original_xml in manifest.get("inertia_from_meshes", {}).items():
+        link = robot.links[name].element
+        old = link.find("inertial")
+        position = list(link).index(old)
+        link.remove(old)
+        link.insert(position, element_from_string(original_xml))
     # 3. mesh split: put each original <visual>/<collision> back where its chunks are
     for entry in manifest["mesh_chunks"]:
         link = robot.links[entry["link"]].element

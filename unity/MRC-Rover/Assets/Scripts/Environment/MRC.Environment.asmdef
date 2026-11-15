@@ -2,7 +2,8 @@
     "name": "MRC.Environment",
     "rootNamespace": "MRC.Environment",
     "references": [
-        "MRC.Feasibility"
+        "MRC.Feasibility",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -62,8 +62,23 @@ def matmul(a: Matrix, b: Matrix) -> Matrix:
 IDENTITY: Matrix = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
 
 
-def world_transforms(robot: Robot) -> dict[str, Matrix]:
-    """Pose of every link relative to the root link, with all joints at zero."""
+def joint_motion(joint_type: str, axis, value: float) -> Matrix:
+    """Transform of a joint moved by `value` (radians, or metres for prismatic) about/along its axis."""
+    x, y, z = axis
+    n = math.sqrt(x * x + y * y + z * z) or 1.0
+    x, y, z = x / n, y / n, z / n
+    if joint_type == "prismatic":
+        return [[1.0, 0.0, 0.0, x * value], [0.0, 1.0, 0.0, y * value], [0.0, 0.0, 1.0, z * value], [0.0, 0.0, 0.0, 1.0]]
+    c, s, t = math.cos(value), math.sin(value), 1 - math.cos(value)  # Rodrigues
+    return [[t * x * x + c, t * x * y - s * z, t * x * z + s * y, 0.0],
+            [t * x * y + s * z, t * y * y + c, t * y * z - s * x, 0.0],
+            [t * x * z - s * y, t * y * z + s * x, t * z * z + c, 0.0],
+            [0.0, 0.0, 0.0, 1.0]]
+
+
+def world_transforms(robot: Robot, positions: dict[str, float] | None = None) -> dict[str, Matrix]:
+    """Pose of every link relative to the root link. Joints are at zero unless given in `positions`
+    (joint name -> radians, or metres for prismatic joints)."""
     order = robot.tree_order()
     if not order:
         return {}
@@ -72,7 +87,11 @@ def world_transforms(robot: Robot) -> dict[str, Matrix]:
     for name in order[1:]:
         joint = parents[name]
         xyz, rpy = parse_origin(joint.element)
-        result[name] = matmul(result[joint.parent], transform(xyz, rpy))
+        pose = matmul(result[joint.parent], transform(xyz, rpy))
+        value = (positions or {}).get(joint.name, 0.0)
+        if value and joint.type in ("revolute", "continuous", "prismatic"):
+            pose = matmul(pose, joint_motion(joint.type, parse_axis(joint.element) or (1.0, 0.0, 0.0), value))
+        result[name] = pose
     return result
 
 

@@ -93,6 +93,8 @@ public static class RoverImport
         var controller = robot.GetComponent<Controller>();
         if (controller != null) controller.enabled = false;
 
+        int fixedInertials = ApplyExactInertia(robot, manifest);
+
         string prefabPath = $"{assetFolder}/{robot.name}.prefab";
         PrefabUtility.SaveAsPrefabAsset(robot, prefabPath);
         UnityEngine.Object.DestroyImmediate(robot);
@@ -112,6 +114,7 @@ public static class RoverImport
             ["colliders"] = saved.GetComponentsInChildren<Collider>(true).Length,
             ["mesh_filters"] = meshFilters.Length,
             ["render_vertices"] = meshFilters.Where(m => m.sharedMesh != null).Sum(m => (long)m.sharedMesh.vertexCount),
+            ["inertia_set_from_manifest"] = fixedInertials,
             ["error_count"] = errors.Count,
             ["warning_count"] = warnings.Count,
             ["errors"] = new JArray(errors.Distinct().Take(20)),
@@ -121,6 +124,43 @@ public static class RoverImport
         FeasibilityPaths.SetCurrentVariant(variant, prefabPath, $"{assetFolder}/manifest.json");
         Debug.Log($"[Feasibility] Imported {outputs[0]} as {prefabPath} in {timer.Elapsed.TotalSeconds:F1}s " +
                   $"({errors.Count} errors, {warnings.Count} warnings)");
+    }
+
+    /// <summary>
+    /// The URDF Importer (v0.5.2) mis-rotates inertia tensors that are not diagonal in the link frame
+    /// (its eigenvector-to-quaternion conversion). The pipeline computes principal moments and axes
+    /// in Unity coordinates, so set them directly - on the body and on UrdfInertial, which re-applies
+    /// its stored values in Start().
+    /// </summary>
+    static int ApplyExactInertia(GameObject robot, JObject manifest)
+    {
+        var links = manifest["physics"]?["links"] as JObject;
+        if (links == null) return 0;
+        int count = 0;
+        foreach (var body in robot.GetComponentsInChildren<ArticulationBody>(true))
+        {
+            if (!(links[body.name] is JObject link) || link["principal_moments_unity"] == null) continue;
+            var m = link["principal_moments_unity"];
+            var q = link["principal_rotation_unity_xyzw"];
+            var c = link["com_unity"];
+            var moments = new Vector3((float)m[0], (float)m[1], (float)m[2]);
+            var rotation = new Quaternion((float)q[0], (float)q[1], (float)q[2], (float)q[3]);
+            var com = new Vector3((float)c[0], (float)c[1], (float)c[2]);
+            body.centerOfMass = com;
+            body.inertiaTensor = moments;
+            body.inertiaTensorRotation = rotation;
+            var inertial = body.GetComponent<UrdfInertial>();
+            if (inertial != null)
+            {
+                inertial.useUrdfData = true;
+                inertial.centerOfMass = com;
+                inertial.inertiaTensor = moments;
+                inertial.inertiaTensorRotation = rotation;
+                inertial.inertialAxisRotation = Quaternion.identity;
+            }
+            count++;
+        }
+        return count;
     }
 
     static void CopyDirectory(string source, string destination)

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace MRC.Environment
 {
@@ -15,7 +16,7 @@ namespace MRC.Environment
         void Update()
         {
             fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 1e-4f), 0.05f);
-            if (Input.GetKeyDown(KeyCode.H)) showHelp = !showHelp;
+            if (Keyboard.current != null && Keyboard.current.hKey.wasPressedThisFrame) showHelp = !showHelp;
         }
 
         void OnGUI()

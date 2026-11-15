@@ -32,6 +32,8 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         overrides["collapse_frames"] = args.collapse_frames
     if getattr(args, "ignore_missing_meshes", False):
         overrides["ignore_missing_meshes"] = True
+    if getattr(args, "fix_inertia", False):
+        overrides["fix_inertia"] = True
     if getattr(args, "mesh_root", None):
         overrides["mesh_roots"] = list(config.mesh_roots) + [str(Path(p).resolve()) for p in args.mesh_root]
     return dataclasses.replace(config, **overrides).check()
@@ -120,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_prep.add_argument("--split-meshes", action="store_true", help="cut big STL meshes into smaller chunk files")
     p_prep.add_argument("--collapse-frames", choices=["auto", "always", "never"],
                         help="remove shape-less, mass-less links from physics (default auto: only when over the limit)")
+    p_prep.add_argument("--fix-inertia", action="store_true",
+                        help="replace inertia that disagrees with the collision mesh by >3x (changes physics data)")
     p_prep.set_defaults(func=_cmd_prepare)
 
     p_rebuild = sub.add_parser("rebuild", help="rebuild the original URDF from a prepared folder and compare")
