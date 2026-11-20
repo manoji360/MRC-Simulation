@@ -8,17 +8,21 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from .parameters import fidelity_rows
 from .config import Config, UNITY_LINK_LIMIT
 from .pipeline import CheckResult
 
 INDENT = "         "
+"""Indent for detail lines under a [OK]/[WARN]/[FAIL] line."""
 
 
 def _name(uri: str) -> str:
+    """File name part of a mesh URI."""
     return PurePosixPath(uri.replace("\\", "/")).name
 
 
 def _list(items: list[str], limit: int = 10) -> list[str]:
+    """Indented bullet lines for items, showing at most `limit` and a '... and N more' line."""
     lines = [f"{INDENT}- {item}" for item in items[:limit]]
     if len(items) > limit:
         lines.append(f"{INDENT}- ... and {len(items) - limit} more")
@@ -26,6 +30,7 @@ def _list(items: list[str], limit: int = 10) -> list[str]:
 
 
 def render_check(result: CheckResult, config: Config) -> list[str]:
+    """The plain-English 'check' report, as lines."""
     lines = [f'URDF check: {result.file}  (robot "{result.robot}")', ""]
 
     if result.problems:
@@ -79,6 +84,14 @@ def render_check(result: CheckResult, config: Config) -> list[str]:
             for level, message in result.physics:
                 lines.append(f"{'[WARN]' if level == 'warn' else '[INFO]'} {message}")
 
+    rows = fidelity_rows(config.physical_parameters)
+    if rows:
+        lines.append("")
+        lines.append(f"Fidelity: {len(rows)} physical parameter(s) are not measured on the real robot yet:")
+        for r in rows:
+            source = r["source"] if len(r["source"]) <= 70 else r["source"][:67] + "..."
+            lines.append(f"{INDENT}{r['status']:9s} {r['name']} = {r['value']} {r['unit']}  ({r['uncertainty']}; {source})")
+        lines.append(f"{INDENT}Full sources: REPORT.md after prepare. Replace with measured values: docs/rover-measurement-guide.md")
     lines.append("")
     if result.ok:
         lines.append('Result: READY. Run "prepare" to build a Unity-ready folder.')
@@ -88,6 +101,7 @@ def render_check(result: CheckResult, config: Config) -> list[str]:
 
 
 def render_prepare_report(manifest: dict) -> str:
+    """REPORT.md for a prepared folder: what was changed, the Unity import steps, fidelity table, warnings."""
     stats = manifest["stats"]
     source = manifest["source"]
     outputs = manifest["outputs"]
@@ -137,6 +151,12 @@ def render_prepare_report(manifest: dict) -> str:
             "`collapsed_frames`, with positions already converted to Unity coordinates (`unity` blocks). "
             "The Unity helper script that re-creates them as empty GameObjects is not written yet.",
         ]
+    rows = fidelity_rows(manifest.get("physics", {}).get("parameters", {}))
+    if rows:
+        out += ["", "## Fidelity: parameters not yet measured on the real robot", "",
+                "| Parameter | Value | Status | Uncertainty | Source |", "|---|---|---|---|---|"]
+        out += [f"| `{r['name']}` | {r['value']} {r['unit']} | {r['status']} | {r['uncertainty']} | {r['source']} |"
+                for r in rows]
     if manifest["warnings"]:
         out += ["", "## Warnings", ""] + [f"- {w}" for w in manifest["warnings"]]
     out += [

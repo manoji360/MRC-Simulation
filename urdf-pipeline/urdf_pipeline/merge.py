@@ -16,6 +16,7 @@ from .parse import element_from_string, load_urdf, write_urdf
 
 
 def sha256_file(path: Path) -> str:
+    """SHA-256 hex digest of a file (detects a changed source URDF)."""
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
@@ -48,6 +49,9 @@ def rebuild_robot(manifest: dict, out_dir: Path) -> Robot:
     compat = manifest.get("unity_compat", {})
     remove_added_axes(robot, compat.get("added_default_axis", []))
     remove_placeholder_inertials(robot, compat.get("placeholder_inertial", {}).get("links", []))
+    # 2b'. registry mass adjustment (applied after fix-inertia, so undone before it)
+    from .parameters import restore_inertials
+    restore_inertials(robot, manifest.get("mass_adjustment", {}).get("original_inertials", {}))
     # 2c. --fix-inertia: put the original <inertial> blocks back
     for name, original_xml in manifest.get("inertia_from_meshes", {}).items():
         link = robot.links[name].element
@@ -77,13 +81,19 @@ def rebuild_robot(manifest: dict, out_dir: Path) -> Robot:
 
 @dataclass
 class RebuildResult:
+    """What rebuild() produced."""
     robot: Robot
+    """The rebuilt original robot."""
     output: Path | None
+    """Where the rebuilt URDF was written, or None if no output was asked for."""
     compared_with: Path | None
+    """The original URDF it was compared with, or None if missing or changed since prepare."""
     differences: list[str]
+    """Differences found (empty = identical to the original)."""
 
 
 def rebuild(manifest_path: str | Path, output: str | Path | None = None) -> RebuildResult:
+    """Rebuild the original URDF from a prepared folder (or its manifest.json), optionally write it, and compare."""
     manifest_path = Path(manifest_path)
     if manifest_path.is_dir():
         manifest_path = manifest_path / FILE_NAME

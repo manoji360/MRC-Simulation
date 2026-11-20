@@ -15,17 +15,24 @@ from urllib.parse import unquote, urlparse
 from .model import Robot
 
 PACKAGE = "package://"
+"""URI scheme of ROS package paths."""
 
 
 @dataclass(frozen=True)
 class MeshUse:
+    """One <mesh> reference in the robot."""
     link: str
+    """Name of the link the mesh belongs to."""
     kind: str  # "visual" or "collision"
+    """'visual' or 'collision'."""
     holder: ET.Element  # the <visual>/<collision> element
+    """The <visual>/<collision> element holding the mesh."""
     uri: str
+    """The mesh filename exactly as written in the URDF."""
 
 
 def mesh_uses(robot: Robot) -> list[MeshUse]:
+    """Every mesh reference in the robot, in file order."""
     uses = []
     for link in robot.links.values():
         for holder in link.element:
@@ -37,6 +44,7 @@ def mesh_uses(robot: Robot) -> list[MeshUse]:
 
 
 def is_absolute(uri: str) -> bool:
+    """True for absolute file paths and file:// URIs (they only work on the computer that made them)."""
     return (
         uri.startswith("file://")
         or uri.startswith("/")
@@ -62,6 +70,7 @@ def output_key(uri: str) -> str | None:
 
 
 def _file_uri_path(uri: str) -> Path:
+    """Local path of a file:// URI."""
     path = unquote(urlparse(uri).path)
     # file:///C:/x -> "/C:/x" on Windows
     if len(path) > 2 and path[0] == "/" and path[2] == ":":
@@ -92,10 +101,13 @@ def resolve_mesh(uri: str, urdf_dir: Path, mesh_roots: list[Path]) -> Path | Non
 
 
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tif", ".tiff", ".dds", ".gif")
+"""Texture file extensions copied along with COLLADA/OBJ meshes."""
 _MTL_MAP_KEYS = ("map_", "bump", "disp", "decal", "refl", "norm")
+"""OBJ material-file keys that reference texture maps."""
 
 
 def _safe_relative(ref: str) -> str | None:
+    """A texture/material reference as a safe relative path, or None if it is absolute or leaves the folder."""
     ref = unquote(ref.strip())
     if ref.startswith("file://"):
         ref = ref[len("file://"):]
@@ -141,6 +153,7 @@ def companion_files(mesh_path: Path) -> list[str]:
 
 
 def chunk_uri(uri: str, index: int) -> str:
+    """URI of mesh chunk `index`: name.stl -> name_chunk00.stl."""
     base, dot, ext = uri.rpartition(".")
     if not dot:
         return f"{uri}_chunk{index:02d}"

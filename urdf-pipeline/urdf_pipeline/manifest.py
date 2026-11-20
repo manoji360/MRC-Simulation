@@ -12,16 +12,22 @@ from pathlib import Path
 from .errors import PipelineError
 
 TOOL_NAME = "urdf_pipeline"
+"""Value of manifest['tool']: identifies folders this tool created."""
 SCHEMA_VERSION = 1
+"""Manifest format version; bump when the layout changes incompatibly."""
 FILE_NAME = "manifest.json"
+"""Name of the manifest file inside a prepared folder."""
 REQUIRED_KEYS = ("tool", "schema_version", "source", "parts", "bridge_joints", "collapsed_frames", "mesh_chunks")
+"""Keys every valid manifest must contain (rebuild needs them)."""
 
 
 def write_manifest(data: dict, path: str | Path) -> None:
+    """Write the manifest as indented JSON (UTF-8, LF line endings)."""
     Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def read_manifest(path: str | Path) -> dict:
+    """Read and sanity-check a manifest; PipelineError if it is missing, not JSON, or from another tool/version."""
     path = Path(path)
     if path.is_dir():
         path = path / FILE_NAME
@@ -45,6 +51,7 @@ def read_manifest(path: str | Path) -> dict:
 
 
 def is_pipeline_manifest(path: Path) -> bool:
+    """True if path is a manifest written by this tool (so prepare may replace that folder)."""
     try:
         return json.loads(path.read_text(encoding="utf-8")).get("tool") == TOOL_NAME
     except (OSError, ValueError, AttributeError):

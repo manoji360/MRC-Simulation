@@ -102,14 +102,16 @@ foreach ($variant in $Variants) {
     }
     $cases = @{}
     if (Test-Path $xml) { ([xml](Get-Content $xml)).SelectNodes("//test-case") | ForEach-Object { $cases[$_.name] = $_.result } }
-    $failed = @($cases.GetEnumerator() | Where-Object { $_.Value -ne "Passed" } | ForEach-Object { $_.Key })
+    # Skipped (e.g. the ROS test without -ros) is not a failure.
+    $failed = @($cases.GetEnumerator() | Where-Object { $_.Value -notin @("Passed", "Skipped") } | ForEach-Object { $_.Key })
     $summary += [pscustomobject]@{
         Variant      = $variant
         Result       = if ($cases.Count -eq 0) { "tests did not run (see tests.log)" } elseif ($failed.Count -eq 0) { "ALL PASS" } else { "FAIL: " + ($failed -join ", ") }
         Bodies       = $imp.articulation_bodies
         ImportSec    = $imp.import_seconds
         MassKg       = if ($phy) { "{0} / {1}" -f $phy.mass.unity_total_kg, $phy.mass.unity_expected_kg } else { "" }
-        SettleMps    = if ($phy) { $phy.settle.final_max_link_speed_mps } else { "" }
+        SettleSec    = if ($phy) { $phy.settle.settle_time_s } else { "" }
+        AccelDecel   = if ($phy -and $phy.acceleration) { "$($phy.acceleration.measured_accel_mps2) / $($phy.acceleration.measured_decel_mps2)" } else { "" }
         DriveM       = if ($phy) { "{0} of {1}" -f $phy.drive.distance_forward_m, $phy.drive.expected_distance_m } else { "" }
         ArmErrDeg    = if ($phy) { $phy.arm.worst_error_deg } else { "" }
         MsPerStep    = if ($phy) { $phy.performance.ms_per_step } else { "" }

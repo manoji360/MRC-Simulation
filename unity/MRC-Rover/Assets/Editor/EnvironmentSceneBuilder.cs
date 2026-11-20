@@ -11,10 +11,13 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
+/// <summary>Creates the (almost empty) test-environment scene; its EnvironmentGenerator builds everything when you press Play.</summary>
 public static class EnvironmentSceneBuilder
 {
+    /// <summary>Where the scene is saved.</summary>
     public const string ScenePath = "Assets/Scenes/RoverTestEnvironment.unity";
 
+    /// <summary>Menu MRC &gt; Create Test Environment Scene (robot variant 'tuned').</summary>
     [MenuItem("MRC/Create Test Environment Scene")]
     public static void CreateFromMenu()
     {
@@ -23,6 +26,7 @@ public static class EnvironmentSceneBuilder
         EditorSceneManager.OpenScene(ScenePath);
     }
 
+    /// <summary>Batch entry point: -executeMethod EnvironmentSceneBuilder.CreateFromCommandLine [-variant name]; exits Unity with 0 or 1.</summary>
     public static void CreateFromCommandLine()
     {
         int code = 0;
@@ -31,6 +35,7 @@ public static class EnvironmentSceneBuilder
         EditorApplication.Exit(code);
     }
 
+    /// <summary>Create and save the scene with one EnvironmentGenerator set to load Assets/Robots/&lt;variant&gt;/.</summary>
     public static void Create(string variant)
     {
         System.IO.Directory.CreateDirectory("Assets/Scenes");

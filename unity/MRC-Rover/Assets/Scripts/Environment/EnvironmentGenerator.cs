@@ -9,8 +9,11 @@ namespace MRC.Environment
     /// <summary>Everything the environment builder created, for drivers, tests and the HUD.</summary>
     public class EnvironmentInfo
     {
+        /// <summary>The test-course lanes (empty if the course was not built).</summary>
         public List<CourseLane> Lanes = new List<CourseLane>();
+        /// <summary>The desert terrain (null if not built).</summary>
         public Terrain Terrain;
+        /// <summary>Where the rover starts: the start of the first lane.</summary>
         public Vector3 StartPad;
         /// <summary>Desert start point east of the course (drive facing +X, across a dry wash).</summary>
         public Vector3 DesertStart;
@@ -23,18 +26,30 @@ namespace MRC.Environment
     /// </summary>
     public class EnvironmentGenerator : MonoBehaviour
     {
+        /// <summary>Folder under Assets/Robots/ created by RoverImport (run_feasibility or the import command).</summary>
         [Tooltip("Folder under Assets/Robots/ created by RoverImport (run_feasibility or the import command).")]
         public string robotVariant = "tuned";
+        /// <summary>Build the Utah desert terrain.</summary>
         public bool buildDesert = true;
+        /// <summary>Build the test course.</summary>
         public bool buildCourse = true;
+        /// <summary>Spawn the imported rover with keyboard driving, camera and HUD.</summary>
         public bool spawnRover = true;
+        /// <summary>Seed for the terrain (same seed = same terrain).</summary>
         public int terrainSeed = 7;
+        /// <summary>Connect the rover to ROS 2 (ros2/README.md): /cmd_vel in, /odom out. Also enabled by the -ros command-line flag.</summary>
+        [Tooltip("Connect the rover to ROS 2 (ros2/README.md): /cmd_vel in, /odom out. Also enabled by the -ros command-line flag.")]
+        public bool enableRos = false;
 
+        /// <summary>Physics step of the scene: 0.01 s (100 Hz).</summary>
         public const float FixedTimestep = 0.01f;
+        /// <summary>World position of the test course's first lane.</summary>
         public static readonly Vector3 CourseOrigin = Vector3.zero;
 
+        /// <summary>What Build() created (lanes, terrain, start points).</summary>
         public EnvironmentInfo Info { get; private set; }
 
+        /// <summary>On Play: 100 Hz physics, Earth gravity, lighting, the environment, then the rover.</summary>
         void Awake()
         {
             Time.fixedDeltaTime = FixedTimestep;
@@ -66,6 +81,7 @@ namespace MRC.Environment
             return info;
         }
 
+        /// <summary>Sun, procedural desert sky, ambient light and haze.</summary>
         public static void SetUpLighting()
         {
             var sun = new GameObject("Sun").AddComponent<Light>();
@@ -95,6 +111,7 @@ namespace MRC.Environment
             RenderSettings.fogDensity = 0.003f;
         }
 
+        /// <summary>Load the imported rover (prefab + manifest) from Assets/Robots/&lt;robotVariant&gt;/, place it on the start pad, and add driving, camera, HUD and optionally ROS.</summary>
         void SpawnRover()
         {
             GameObject prefab = null;
@@ -127,6 +144,11 @@ namespace MRC.Environment
             var cam = Camera.main != null ? Camera.main : new GameObject("Main Camera") { tag = "MainCamera" }.AddComponent<Camera>();
             cam.farClipPlane = 1500f;
             cam.gameObject.AddComponent<FollowCamera>().Target = rig.Root.transform;
+            if (enableRos || RosRoverBridge.RequestedOnCommandLine())
+            {
+                teleop.Ros = gameObject.AddComponent<RosRoverBridge>();
+                teleop.Ros.Init(rig, teleop);
+            }
             gameObject.AddComponent<RoverHud>().Teleop = teleop;
         }
     }

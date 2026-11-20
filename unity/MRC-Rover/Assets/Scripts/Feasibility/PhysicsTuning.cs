@@ -11,6 +11,7 @@ namespace MRC.Feasibility
     /// </summary>
     public static class PhysicsTuning
     {
+        /// <summary>Physics step used when no -dt is given: 0.01 s (100 Hz).</summary>
         public const float DefaultTimestep = 0.01f;
 
         /// <summary>Fixed physics timestep in seconds (-dt argument, default 0.01 = 100 Hz).</summary>

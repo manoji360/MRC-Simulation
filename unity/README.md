@@ -4,6 +4,8 @@ This folder holds a Unity 6.3 LTS project (`MRC-Rover/`) that checks whether **U
 the physics backend** for a robot prepared by `urdf-pipeline`. The test imports the robot, then
 checks that it lands, drives and moves its arm correctly in Unity's physics engine.
 
+Code reference (every file and function, bottom-up): [docs/code-guide.md](../docs/code-guide.md).
+
 ## Run it
 
 You need:

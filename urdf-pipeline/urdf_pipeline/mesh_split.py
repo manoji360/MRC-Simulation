@@ -11,9 +11,11 @@ from collections import Counter
 from .stl import StlMesh
 
 VERTEX_MODES = ("raw", "welded")
+"""Allowed vertex-counting modes (see split_mesh)."""
 
 # Spread the low 10 bits of an integer so they occupy every third bit.
 _SPREAD = []
+"""Lookup table: each 10-bit number with its bits spread to every third bit (for Morton codes)."""
 for _i in range(1024):
     _v = 0
     for _bit in range(10):
@@ -23,14 +25,17 @@ for _i in range(1024):
 
 
 def vertex_count(mesh: StlMesh, mode: str) -> int:
+    """Vertex count of a mesh as counted by `mode` ('raw' or 'welded')."""
     return mesh.raw_vertex_count if mode == "raw" else mesh.welded_vertex_count
 
 
 def needs_split(mesh: StlMesh, max_vertices: int, mode: str = "raw") -> bool:
+    """True if the mesh has more vertices than max_vertices."""
     return vertex_count(mesh, mode) > max_vertices
 
 
 def _morton_order(triangles: list[tuple]) -> list[int]:
+    """Triangle indices sorted along a 3-D Morton (Z-order) curve, so nearby triangles end up in the same chunk."""
     if not triangles:
         return []
     cx = [(t[3] + t[6] + t[9]) / 3 for t in triangles]

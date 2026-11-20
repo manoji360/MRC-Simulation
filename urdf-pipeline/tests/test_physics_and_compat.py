@@ -1,3 +1,5 @@
+"""Tests of physics checks, Unity-unit conversion, compatibility fixes, frames, couplings, springs and limits."""
+
 import math
 
 import pytest
@@ -16,10 +18,12 @@ from urdf_pipeline.physics import joint_roles, physics_block, physics_issues, to
 
 @pytest.fixture
 def rover():
+    """The rover-like test robot, parsed."""
     return parse_urdf_string(robot("rover_like", rover_like_items(), ROVER_EXTRAS))
 
 
 def test_joint_roles(rover):
+    """Wheel, suspension, arm and passive roles are guessed correctly, and can be overridden."""
     roles = joint_roles(rover)
     assert {j for j, r in roles.items() if r == "wheel"} == {
         f"{s}_{e}_wheel_joint" for s in ("left", "right", "rear") for e in ("front", "back")}
@@ -31,6 +35,7 @@ def test_joint_roles(rover):
 
 
 def test_physics_issues_flag_real_rover_style_problems(rover):
+    """physics_issues warns about massless shapes and free-swinging joints, and reports the total mass."""
     issues = physics_issues(rover)
     text = " ".join(m for _, m in issues)
     assert [level for level, m in issues if "jaws" in m] == ["warn"]
@@ -39,12 +44,14 @@ def test_physics_issues_flag_real_rover_style_problems(rover):
 
 
 def test_bad_inertia_is_flagged():
+    """Inertia that breaks the triangle inequality is flagged as impossible."""
     bad = robot("r", ['<link name="a"><inertial><mass value="1"/>'
                       '<inertia ixx="1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial></link>'])
     assert any("impossible inertia" in m for _, m in physics_issues(parse_urdf_string(bad)))
 
 
 def test_physics_block_converts_to_unity_units(rover):
+    """physics_block converts joint limits to Unity degrees and keeps effort in N*m."""
     block = physics_block(rover)
     assert block["total_mass_kg"] == pytest.approx(ROVER_LIKE_TOTAL_MASS)
     arm = block["joints"]["arm_1_joint"]["unity_drive"]
@@ -58,6 +65,7 @@ def test_physics_block_converts_to_unity_units(rover):
 
 
 def test_prismatic_stays_in_metres():
+    """Prismatic joint limits stay in metres."""
     text = robot("r", [link("a", 1), link("b", 1),
                        joint("slide", "prismatic", "a", "b", limit='lower="0" upper="0.3" effort="10" velocity="0.2"')])
     drive = physics_block(parse_urdf_string(text))["joints"]["slide"]["unity_drive"]
@@ -65,6 +73,7 @@ def test_prismatic_stays_in_metres():
 
 
 def test_default_axis_is_added_and_removed(rover):
+    """A missing <axis> is written explicitly by prepare and removed again by rebuild."""
     original = rover.copy()
     assert joints_missing_axis(rover) == ["back_link_joint"]
     assert add_default_axes(rover) == ["back_link_joint"]
@@ -74,6 +83,7 @@ def test_default_axis_is_added_and_removed(rover):
 
 
 def test_placeholder_inertials_are_added_and_removed(rover):
+    """Placeholder masses are added to massless links and removed again."""
     original = rover.copy()
     missing = links_missing_inertial(rover)
     assert set(missing) == {"jaws"} | {f"camera_frame_{i}" for i in range(4)}
@@ -84,6 +94,7 @@ def test_placeholder_inertials_are_added_and_removed(rover):
 
 
 def test_joint_couplings_from_config_and_mimic(rover):
+    """Couplings from the config resolve same/opposite rotation from the axes; URDF mimic tags are read."""
     from urdf_pipeline.errors import PipelineError
     from urdf_pipeline.physics import joint_couplings
 
@@ -109,6 +120,7 @@ def test_joint_couplings_from_config_and_mimic(rover):
 
 
 def test_frames_collapse_and_restore(rover):
+    """Frame-only links are collapsed with correct offsets and restored exactly."""
     original = rover.copy()
     assert frame_only_links(rover) == [f"camera_frame_{i}" for i in range(4)]  # imu has mass, jaws has a shape
     entries = collapse_frames(rover)
@@ -121,6 +133,7 @@ def test_frames_collapse_and_restore(rover):
 
 
 def test_joint_springs_auto_from_weight():
+    """'auto' spring stiffness/damping follow from the weight on the wheels and the lever arm."""
     from urdf_pipeline.errors import PipelineError
     from urdf_pipeline.physics import joint_springs
 
@@ -146,9 +159,27 @@ def test_joint_springs_auto_from_weight():
 
 
 def test_locked_joints_validated(rover):
+    """locked_joints accepts moving joints and rejects others."""
     from urdf_pipeline.errors import PipelineError
     from urdf_pipeline.physics import locked_joints
 
     assert locked_joints(rover, ["back_link_joint"]) == ["back_link_joint"]
     with pytest.raises(PipelineError, match="not a moving joint"):
         locked_joints(rover, ["arm_mount"])
+
+
+def test_drive_limits_config_and_wheel_warning(tmp_path):
+    """Wheels without limits are detected; drive_limits validation and deceleration default work."""
+    from urdf_pipeline.config import Config
+    from urdf_pipeline.errors import PipelineError
+    from urdf_pipeline.physics import drive_limits_block, unlimited_wheels
+
+    rover = parse_urdf_string(robot("rover_like", rover_like_items(), ROVER_EXTRAS))
+    assert len(unlimited_wheels(rover)) == 6
+    assert drive_limits_block({"max_linear_accel_mps2": 2.0, "wheel_accel_rev_s2": None}) == {
+        "max_linear_accel_mps2": 2.0, "max_linear_decel_mps2": 2.0}
+    Config(drive_limits={"max_linear_speed_mps": 3.7, "controller_rate_hz": 30}).check()
+    with pytest.raises(PipelineError, match="did you mean 'max_linear_accel_mps2'"):
+        Config(drive_limits={"max_linear_accel": 2.0}).check()
+    with pytest.raises(PipelineError, match="positive number"):
+        Config(drive_limits={"max_linear_speed_mps": -1}).check()

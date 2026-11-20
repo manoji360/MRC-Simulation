@@ -8,10 +8,12 @@ from pathlib import Path
 
 
 def _box(size: str) -> str:
+    """URDF <geometry><box size> snippet."""
     return f'<geometry><box size="{size}"/></geometry>'
 
 
 def link(name: str, mass: float | None = None, box: str | None = None, mesh: str | None = None) -> str:
+    """URDF <link> text with optional mass (kg, with a simple inertia), box shape or mesh file."""
     body = ""
     if mass is not None:
         body += (f'<inertial><mass value="{mass}"/>'
@@ -26,6 +28,7 @@ def link(name: str, mass: float | None = None, box: str | None = None, mesh: str
 def joint(name: str, kind: str, parent: str, child: str, xyz: str = "0 0 0", rpy: str = "0 0 0",
           axis: str | None = "1 0 0", limit: str | None = None, dynamics: str | None = None,
           mimic: str | None = None) -> str:
+    """URDF <joint> text; axis/limit/dynamics/mimic are added when given (no <axis> for fixed joints)."""
     parts = [f'<parent link="{parent}"/>', f'<child link="{child}"/>', f'<origin xyz="{xyz}" rpy="{rpy}"/>']
     if axis is not None and kind != "fixed":
         parts.append(f'<axis xyz="{axis}"/>')
@@ -39,11 +42,14 @@ def joint(name: str, kind: str, parent: str, child: str, xyz: str = "0 0 0", rpy
 
 
 def robot(name: str, items: list[str], extras: str = "") -> str:
+    """A complete <robot> document from link/joint snippets plus optional extra top-level XML."""
     return f'<?xml version="1.0"?>\n<robot name="{name}">{"".join(items)}{extras}</robot>\n'
 
 
 ARM_LIMIT = 'lower="-1.5" upper="1.5" effort="50" velocity="1.0"'
+"""A typical arm-joint <limit> (±1.5 rad, 50 N*m, 1 rad/s)."""
 BOGIE_LIMIT = 'lower="-0.5" upper="0.5" effort="100" velocity="10"'
+"""A typical bogie-joint <limit> (±0.5 rad)."""
 
 
 def rover_like_items(frame_count: int = 4) -> list[str]:
@@ -91,11 +97,14 @@ ROVER_EXTRAS = (
     '<material name="grey"><color rgba="0.5 0.5 0.5 1"/></material>'
     '<gazebo reference="camera_frame_0"><sensor name="cam" type="camera"/></gazebo>'
 )
+"""Top-level extras for the rover-like test robot (a material and a <gazebo> block)."""
 
 ROVER_LIKE_TOTAL_MASS = 20 + 3 * 2 + 6 * 1 + 0.5 + 1.0 + 5 * 0.5 + 0.2 + 0.1 + 0.05
+"""Total mass (kg) of the rover-like test robot, for assertions."""
 
 
 def write_stl(path: Path, triangles: list[tuple]) -> None:
+    """Write a binary STL file from (v1, v2, v3) vertex-tuple triangles."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as handle:
         handle.write(b"test mesh".ljust(80, b" "))
@@ -128,6 +137,7 @@ def write_rover_like(folder: Path, heavy_wheel: bool = False, frame_count: int =
 
 
 def chain(n: int) -> str:
+    """URDF of a serial chain of n links joined by revolute joints (for link-limit tests)."""
     items = [link("link_0", 1.0)]
     for i in range(1, n):
         items += [link(f"link_{i}", 1.0),

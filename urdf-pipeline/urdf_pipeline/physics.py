@@ -16,18 +16,23 @@ import math
 from .model import Joint, Link, Robot
 
 MASS_RATIO_WARN = 50.0
+"""Warn when two connected links differ in mass by more than this factor (PhysX articulations get unstable)."""
 MOVABLE = ("revolute", "continuous", "prismatic")
+"""Joint types that move (and get Unity drives)."""
 
 
 def link_mass(link: Link) -> float | None:
+    """Mass of one link in kg, or None."""
     return link.mass
 
 
 def total_mass(robot: Robot) -> float:
+    """Sum of every link's mass in kg."""
     return sum(m for m in (link_mass(l) for l in robot.links.values()) if m)
 
 
 def _inertia(link: Link) -> dict[str, float] | None:
+    """The link's <inertia> values (ixx ... iyz), {} if unreadable, None if absent."""
     inertia = link.element.find("inertial/inertia")
     if inertia is None:
         return None
@@ -38,6 +43,7 @@ def _inertia(link: Link) -> dict[str, float] | None:
 
 
 def _limit(joint: Joint) -> dict[str, float]:
+    """The joint's <limit> attributes (lower, upper, effort, velocity) that are present and numeric."""
     limit = joint.element.find("limit")
     if limit is None:
         return {}
@@ -52,6 +58,7 @@ def _limit(joint: Joint) -> dict[str, float]:
 
 
 def _dynamics(joint: Joint) -> dict[str, float]:
+    """The joint's <dynamics> damping and friction values that are present and numeric."""
     dynamics = joint.element.find("dynamics")
     if dynamics is None:
         return {}
@@ -66,6 +73,7 @@ def _dynamics(joint: Joint) -> dict[str, float]:
 
 
 def _movable_below(robot: Robot, link: str, children: dict[str, list[Joint]]) -> bool:
+    """True if any moving joint exists anywhere below `link` in the tree."""
     stack = [link]
     while stack:
         for joint in children.get(stack.pop(), []):
@@ -76,7 +84,9 @@ def _movable_below(robot: Robot, link: str, children: dict[str, list[Joint]]) ->
 
 
 ROLES = ("wheel", "suspension", "arm", "passive")
+"""Possible joint roles (see joint_roles)."""
 _WHEEL_WORDS = ("wheel", "tire", "tyre")
+"""Words in a joint or link name that mark a wheel."""
 
 
 def joint_roles(robot: Robot, overrides: dict[str, str] | None = None) -> dict[str, str]:
@@ -179,26 +189,32 @@ def physics_issues(robot: Robot, role_overrides: dict[str, str] | None = None) -
 
 
 def _clean(value: float | None) -> float | None:
+    """Round to 9 decimals for readable JSON (None stays None)."""
     return None if value is None else round(value, 9)
 
 
 # ROS (x fwd, y left, z up) -> Unity (x right, y up, z fwd): (x, y, z) -> (-y, z, x).
 _ROS_TO_UNITY = ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
+"""ROS -> Unity axis change as a matrix: (x, y, z) -> (-y, z, x)."""
 
 
 def _mat_mul(a, b):
+    """Product of two 3x3 matrices."""
     return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
 
 
 def _transpose(a):
+    """Transpose of a 3x3 matrix."""
     return [[a[j][i] for j in range(3)] for i in range(3)]
 
 
 def _mat_vec(a, v):
+    """3x3 matrix times a 3-vector."""
     return [sum(a[i][k] * v[k] for k in range(3)) for i in range(3)]
 
 
 def _rows(m):
+    """A 3x3 matrix with every entry rounded for JSON."""
     return [[_clean(x) for x in row] for row in m]
 
 
@@ -257,6 +273,7 @@ def center_of_mass(robot: Robot) -> dict:
 
 
 def _joint_axis_in_root(robot: Robot, joint: Joint, poses: dict) -> list[float] | None:
+    """A joint's axis direction relative to the root link (zero pose), in Unity coordinates."""
     from .kinematics import parse_axis
 
     axis = parse_axis(joint.element) or (1.0, 0.0, 0.0)  # URDF default axis
@@ -354,6 +371,7 @@ def joint_couplings(robot: Robot, configured: dict[str, dict] | None = None) -> 
 
 
 GRAVITY = 9.81
+"""Standard gravity in m/s^2 (used to turn masses into loads)."""
 
 
 def joint_springs(robot: Robot, configured: dict[str, dict] | None = None,
@@ -483,3 +501,41 @@ def locked_joints(robot: Robot, names: list[str] | None) -> list[str]:
         if name not in robot.joints or robot.joints[name].type not in MOVABLE:
             raise PipelineError(f"locked_joints: '{name}' is not a moving joint of this robot.")
     return list(names or [])
+
+
+def drive_limits_block(limits: dict | None) -> dict:
+    """Drive limits for Unity (SI units, as configured). Deceleration defaults to acceleration,
+    as in ros2 diff_drive_controller."""
+    block = {k: v for k, v in (limits or {}).items() if v is not None}
+    if "max_linear_accel_mps2" in block:
+        block.setdefault("max_linear_decel_mps2", block["max_linear_accel_mps2"])
+    return block
+
+
+def unlimited_wheels(robot: Robot, role_overrides: dict[str, str] | None = None) -> list[str]:
+    """Wheel joints with no effort or velocity limit in the URDF."""
+    roles = joint_roles(robot, role_overrides)
+    return [j for j, r in roles.items() if r == "wheel"
+            and not {"effort", "velocity"} & set(_limit(robot.joints[j]))]
+
+
+def joint_limits_block(robot: Robot, limits: dict | None) -> dict:
+    """Real joint motion limits for Unity, in both radians and Unity degrees."""
+    from .errors import PipelineError
+
+    block = {}
+    for name, spec in (limits or {}).items():
+        joint = robot.joints.get(name)
+        if joint is None or joint.type not in MOVABLE:
+            raise PipelineError(f"joint_limits: '{name}' is not a moving joint of this robot.")
+        scale = math.degrees(1.0) if joint.type in ("revolute", "continuous") else 1.0
+        entry = {}
+        if "max_velocity" in spec:
+            entry["max_velocity"] = spec["max_velocity"]
+            entry["max_velocity_unity"] = round(spec["max_velocity"] * scale, 6)
+        if "max_acceleration" in spec:
+            entry["max_acceleration"] = spec["max_acceleration"]
+            entry["max_acceleration_unity"] = round(spec["max_acceleration"] * scale, 6)
+        entry["units_unity"] = "degrees" if scale != 1.0 else "metres"
+        block[name] = entry
+    return block

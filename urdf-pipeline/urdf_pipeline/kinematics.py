@@ -12,9 +12,11 @@ from .errors import PipelineError
 from .model import Robot
 
 Matrix = list[list[float]]
+"""A 4x4 homogeneous transform as nested lists (rows)."""
 
 
 def _vec3(text: str | None, what: str) -> tuple[float, float, float]:
+    """Parse 'x y z' into three floats (zeros if empty); raises PipelineError naming `what` if malformed."""
     if not text or not text.strip():
         return (0.0, 0.0, 0.0)
     try:
@@ -35,6 +37,7 @@ def parse_origin(element: ET.Element | None) -> tuple[tuple[float, float, float]
 
 
 def parse_axis(element: ET.Element | None) -> tuple[float, float, float] | None:
+    """A joint's <axis xyz> as three floats, or None when the joint has no <axis> (URDF default 1 0 0)."""
     axis = None if element is None else element.find("axis")
     return None if axis is None else _vec3(axis.get("xyz"), "axis xyz")
 
@@ -51,15 +54,18 @@ def rpy_matrix(rpy: tuple[float, float, float]) -> Matrix:
 
 
 def transform(xyz, rpy) -> Matrix:
+    """4x4 homogeneous transform from a URDF origin (xyz in metres, rpy in radians)."""
     rot = rpy_matrix(rpy)
     return [rot[0] + [xyz[0]], rot[1] + [xyz[1]], rot[2] + [xyz[2]], [0.0, 0.0, 0.0, 1.0]]
 
 
 def matmul(a: Matrix, b: Matrix) -> Matrix:
+    """Product of two 4x4 matrices."""
     return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
 
 
 IDENTITY: Matrix = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
+"""The 4x4 identity transform (the root link's pose)."""
 
 
 def joint_motion(joint_type: str, axis, value: float) -> Matrix:

@@ -12,29 +12,48 @@ namespace MRC.Feasibility
     /// </summary>
     public class RoverRig
     {
-        // Drive tuning used by the feasibility test (documented in the report).
-        public const float WheelDamping = 50f;          // N*m per deg/s of speed error
-        public const float WheelDefaultForce = 30f;     // N*m per wheel when the URDF gives no effort
-        public const float ArmStiffness = 10000f;       // N*m per degree of position error
-        public const float ArmDamping = 100f;
+        // Drive tuning used by the feasibility test (see docs/code-guide.md).
+        // Units: ArticulationDrive targets are in degrees (deg/s), but Unity passes stiffness and damping
+        // to PhysX unscaled, so they act PER RADIAN (rad/s) of error - measured by the spring sag test.
+        /// <summary>Wheel velocity-drive gain: N*m per rad/s of wheel speed error.</summary>
+        public const float WheelDamping = 50f;          // N*m per rad/s of wheel speed error
+        /// <summary>Wheel torque cap (N*m) when neither the registry (wheel_max_torque_nm) nor the URDF gives one.</summary>
+        public const float WheelDefaultForce = 30f;     // N*m wheel torque cap when neither the registry nor the URDF gives one
+        /// <summary>Arm position-drive stiffness: N*m per rad of position error (stiff, like geared position control).</summary>
+        public const float ArmStiffness = 10000f;       // N*m per rad of arm position error
+        /// <summary>Arm position-drive damping: N*m per rad/s.</summary>
+        public const float ArmDamping = 100f;           // N*m per rad/s
         // Couplings (four-bar linkages etc.) are stiff position drives that keep a follower joint at
         // multiplier * leader + offset. Stiff enough to hold the linkage, soft enough to stay stable.
-        public const float CouplingStiffness = 5000f;   // N*m per degree
-        public const float CouplingDamping = 100f;
-        public const float CouplingForce = 10000f;
+        /// <summary>Linkage (coupling) drive stiffness: N*m per rad of error between follower and leader.</summary>
+        public const float CouplingStiffness = 5000f;   // N*m per rad
+        /// <summary>Linkage drive damping: N*m per rad/s.</summary>
+        public const float CouplingDamping = 100f;      // N*m per rad/s
+        /// <summary>Linkage drive torque cap (N*m).</summary>
+        public const float CouplingForce = 10000f;      // N*m torque cap
 
+        /// <summary>The spawned robot GameObject (the prefab instance).</summary>
         public GameObject Robot { get; private set; }
+        /// <summary>The robot's root ArticulationBody (the base link).</summary>
         public ArticulationBody Root { get; private set; }
+        /// <summary>The pipeline manifest of this robot (manifest.json).</summary>
         public JObject Manifest { get; }
+        /// <summary>Every ArticulationBody (link) by link name.</summary>
         public Dictionary<string, ArticulationBody> Links { get; } = new Dictionary<string, ArticulationBody>();
+        /// <summary>Every Transform in the robot by name (links, collision and visual children).</summary>
         public Dictionary<string, Transform> Frames { get; } = new Dictionary<string, Transform>();
+        /// <summary>The flat test ground created by CreateGround(), if any.</summary>
         public GameObject Ground { get; private set; }
 
+        /// <summary>Create a rig for a robot described by this manifest (call Spawn or Attach next).</summary>
         public RoverRig(JObject manifest) { Manifest = manifest; }
 
+        /// <summary>Name of the root link (manifest parts[0].root_link).</summary>
         public string RootLinkName => (string)Manifest["parts"][0]["root_link"];
+        /// <summary>manifest.physics.joints: every moving joint with its role, child link, Unity drive limits and axis.</summary>
         public JObject Joints => (JObject)Manifest["physics"]["joints"];
 
+        /// <summary>Names of the moving joints with this role (wheel, suspension, arm or passive).</summary>
         public IEnumerable<string> JointsWithRole(string role) =>
             Joints.Properties().Where(p => (string)p.Value["role"] == role).Select(p => p.Name);
 
@@ -45,13 +64,32 @@ namespace MRC.Feasibility
         /// <summary>One closed-linkage constraint from manifest.physics.couplings.</summary>
         public class Coupling
         {
-            public string Follower, Leader;
-            public float Multiplier, OffsetDegrees;
+            /// <summary>Joint that follows (its drive is pointed at the leader).</summary>
+            public string Follower;
+            /// <summary>Joint it follows.</summary>
+            public string Leader;
+            /// <summary>follower = Multiplier * leader + OffsetDegrees (sign already corrected for the importer's axes).</summary>
+            public float Multiplier;
+            /// <summary>Constant offset in degrees.</summary>
+            public float OffsetDegrees;
             // Closed-loop emulation: where the follower drive's reaction torque lands (null = nowhere to move it).
-            public ArticulationBody ReactionFrom, ReactionTo;
+            /// <summary>Body whose drive reaction is cancelled (the follower's parent), or null.</summary>
+            public ArticulationBody ReactionFrom;
+            /// <summary>Body that receives that reaction instead (the leader's parent, as the real closing link would), or null.</summary>
+            public ArticulationBody ReactionTo;
         }
 
+        /// <summary>Linkage couplings from manifest.physics.couplings.</summary>
         public List<Coupling> Couplings { get; } = new List<Coupling>();
+
+        /// <summary>The robot's drive chain (speed/acceleration limits from manifest.physics.drive_limits).</summary>
+        public DriveController DriveControl { get; private set; }
+        /// <summary>Arm joints follow their targets within the real joint limits (manifest.physics.joint_limits).</summary>
+        public ArmController ArmControl { get; private set; }
+        /// <summary>Physical-parameter registry (manifest.physics.parameters) plus -param overrides.</summary>
+        public SimParameters Parameters { get; private set; }
+        /// <summary>What Attach changed because of parameter overrides (for result files).</summary>
+        public JObject AppliedOverrides { get; } = new JObject();
 
         /// <summary>Reaction routing for closed linkages: 1 = on (default), 0 = off, -1 = reversed (diagnostics only;
         /// command line: -couplingReaction on|off|flip).</summary>
@@ -61,16 +99,27 @@ namespace MRC.Feasibility
         /// <summary>A spring/damper from manifest.physics.springs (e.g. a suspension shock).</summary>
         public class Spring
         {
+            /// <summary>Joint the spring acts on.</summary>
             public string Joint;
-            public float RestDegrees, MaxSagDegrees, StiffnessPerRad, DampingPerRad;
+            /// <summary>Angle the spring holds (degrees, sign corrected for the importer's axis).</summary>
+            public float RestDegrees;
+            /// <summary>Design sag under the robot's weight (degrees), used by the settle test.</summary>
+            public float MaxSagDegrees;
+            /// <summary>Spring stiffness (N*m per rad).</summary>
+            public float StiffnessPerRad;
+            /// <summary>Spring damping (N*m per rad/s).</summary>
+            public float DampingPerRad;
         }
 
+        /// <summary>Springs from manifest.physics.springs.</summary>
         public List<Spring> Springs { get; } = new List<Spring>();
 
         // Unity's ArticulationDrive takes targets in degrees but passes stiffness and damping to PhysX
         // unchanged, i.e. per radian - the same units as the manifest (checked by the settle test's sag).
+        /// <summary>Factor between manifest gains (per radian) and Unity drive gains: 1, because Unity drives are per radian too.</summary>
         public const float DriveGainPerManifestUnit = 1f;
 
+        /// <summary>Instantiate the robot prefab at the origin and Attach to it.</summary>
         public void Spawn(GameObject prefab)
         {
             var robot = UnityEngine.Object.Instantiate(prefab, Vector3.zero, Quaternion.identity);
@@ -95,11 +144,119 @@ namespace MRC.Feasibility
             // Measured once, while the robot is upright and its transforms are current:
             // how far the root sits above the robot's lowest collider point.
             rootAboveLowest = Root.transform.position.y - LowestPoint();
+            ResetImporterDynamics();
+            Parameters = new SimParameters(Manifest["physics"]?["parameters"] as JObject);
+            ApplyMassOverrides();
+            ApplyTyreFriction();
             LockJoints();
+            IgnoreAssembledOverlaps();
+            DriveControl = new DriveController(this, Manifest["physics"]?["drive_limits"] as JObject);
+            ArmControl = new ArmController(this, Manifest["physics"]?["joint_limits"] as JObject,
+                                           Parameters.Float("arm_accel_scale") ?? 1f);
             LoadCouplings();
             LoadSprings();
         }
 
+        /// <summary>
+        /// -param total_mass_kg / center_of_mass_offset_m differing from the registry (which the pipeline already
+        /// applied to the URDF): scale every real body's mass and inertia, and shift every body's centre of mass by
+        /// the extra offset (ROS root frame), so the whole robot's centre of mass moves by exactly that much.
+        /// </summary>
+        void ApplyMassOverrides()
+        {
+            var real = Links.Values.Where(b => b.mass >= PlaceholderMassKg).ToList();
+            float manifestTotal = (float?)Manifest["physics"]?["total_mass_kg"] ?? 0f;
+            float? total = Parameters.IsOverridden("total_mass_kg") ? Parameters.Float("total_mass_kg") : null;
+            if (total.HasValue && manifestTotal > 0f)
+            {
+                float scale = total.Value / manifestTotal;
+                foreach (var b in real) { b.mass *= scale; b.inertiaTensor *= scale; }
+                AppliedOverrides["mass_scale"] = scale;
+            }
+            if (Parameters.IsOverridden("center_of_mass_offset_m"))
+            {
+                float[] wanted = Parameters.Vector("center_of_mass_offset_m");
+                float[] applied = Parameters.RegistryVector("center_of_mass_offset_m") ?? new float[3];
+                var deltaRos = new Vector3(wanted[0] - applied[0], wanted[1] - applied[1], wanted[2] - applied[2]);
+                var deltaUnity = new Vector3(-deltaRos.y, deltaRos.z, deltaRos.x);       // ROS -> Unity axes
+                Vector3 world = Root.transform.TransformDirection(deltaUnity);
+                foreach (var b in real) b.centerOfMass += b.transform.InverseTransformDirection(world);
+                AppliedOverrides["center_of_mass_shift_ros_m"] = new JArray(deltaRos.x, deltaRos.y, deltaRos.z);
+            }
+        }
+
+        /// <summary>Wheels get the tyre material when the registry gives tyre friction (see SurfaceFriction).</summary>
+        void ApplyTyreFriction()
+        {
+            if (!Parameters.HasAny("tyre_mu_")) return;
+            SurfaceFriction.Configure(Parameters);
+            foreach (var name in JointsWithRole("wheel"))
+            {
+                var body = JointBody(name);
+                if (body == null) continue;
+                foreach (var c in body.GetComponentsInChildren<Collider>())
+                    if (c.GetComponentInParent<ArticulationBody>() == body) c.sharedMaterial = SurfaceFriction.Tyre;
+            }
+        }
+
+        /// <summary>Bodies whose importer-set damping/friction were reset (see ResetImporterDynamics).</summary>
+        public JArray ImporterDynamicsReset { get; } = new JArray();
+
+        /// <summary>
+        /// The URDF Importer (v0.5.2) maps a joint's &lt;dynamics&gt; wrongly: damping becomes the child BODY's
+        /// linearDamping/angularDamping (drag on its motion through the world, as if in syrup - about 80 N on the
+        /// OSU rover's bogies at 3.7 m/s), and friction becomes PhysX jointFriction (a unitless coefficient times the
+        /// joint load, not N*m). Reset both to zero; the URDF's joint damping and friction are applied correctly
+        /// (N*m*s/rad, N*m) by ConfigureDrives / ApplyPassiveDamping. Aerodynamic drag is negligible at rover speeds.
+        /// </summary>
+        void ResetImporterDynamics()
+        {
+            ImporterDynamicsReset.Clear();
+            foreach (var b in Links.Values)
+            {
+                if (b.linearDamping != 0f || b.angularDamping != 0f || b.jointFriction != 0f)
+                    ImporterDynamicsReset.Add($"{b.name}: linearDamping {b.linearDamping}, angularDamping {b.angularDamping}, jointFriction {b.jointFriction}");
+                b.linearDamping = 0f;
+                b.angularDamping = 0f;
+                b.jointFriction = 0f;
+            }
+        }
+
+        /// <summary>Collider pairs (different bodies) that overlap in the assembled pose and were told to ignore each other.</summary>
+        public int IgnoredOverlapPairs { get; private set; }
+        /// <summary>'bodyA / bodyB' names of every body pair whose overlapping colliders were told to ignore each other.</summary>
+        public JArray IgnoredOverlapBodies { get; } = new JArray();
+
+        /// <summary>
+        /// Parts that already overlap in the robot's assembled (zero) pose are pinned or bolted together on the real
+        /// robot (e.g. a bogie and the second bar of its linkage share one pin), not touching. Unity only ignores
+        /// contacts between a joint's parent and child, so such pairs would jam against each other. Ignore every
+        /// collider pair of two different bodies that is penetrating at spawn.
+        /// </summary>
+        void IgnoreAssembledOverlaps()
+        {
+            Physics.SyncTransforms();
+            var colliders = Robot.GetComponentsInChildren<Collider>().Where(c => c.enabled)
+                .Select(c => (collider: c, body: c.GetComponentInParent<ArticulationBody>())).Where(x => x.body != null).ToList();
+            var bodyPairs = new HashSet<string>();
+            IgnoredOverlapPairs = 0;
+            for (int i = 0; i < colliders.Count; i++)
+                for (int j = i + 1; j < colliders.Count; j++)
+                {
+                    var (a, ba) = colliders[i];
+                    var (b, bb) = colliders[j];
+                    if (ba == bb || !a.bounds.Intersects(b.bounds)) continue;
+                    if (!Physics.ComputePenetration(a, a.transform.position, a.transform.rotation,
+                                                    b, b.transform.position, b.transform.rotation, out _, out float depth) || depth <= 1e-4f)
+                        continue;
+                    Physics.IgnoreCollision(a, b);
+                    IgnoredOverlapPairs++;
+                    string key = string.CompareOrdinal(ba.name, bb.name) < 0 ? $"{ba.name} / {bb.name}" : $"{bb.name} / {ba.name}";
+                    if (bodyPairs.Add(key)) IgnoredOverlapBodies.Add(key);
+                }
+        }
+
+        /// <summary>Joints made fixed because the manifest lists them in locked_joints.</summary>
         public List<string> LockedJoints { get; } = new List<string>();
 
         /// <summary>Joints listed in manifest.physics.locked_joints become fixed (at their zero pose).</summary>
@@ -116,6 +273,7 @@ namespace MRC.Feasibility
             }
         }
 
+        /// <summary>Read manifest.physics.springs; flip each rest angle if the importer reversed that joint's axis.</summary>
         void LoadSprings()
         {
             Springs.Clear();
@@ -139,6 +297,7 @@ namespace MRC.Feasibility
             }
         }
 
+        /// <summary>Read manifest.physics.couplings; fix multiplier signs for axes the importer reversed; set up reaction-torque routing for nested linkages.</summary>
         void LoadCouplings()
         {
             Couplings.Clear();
@@ -216,9 +375,11 @@ namespace MRC.Feasibility
             }
         }
 
+        /// <summary>The ArticulationBody above this one in the hierarchy (its joint's parent link), or null for the root.</summary>
         static ArticulationBody ParentBody(ArticulationBody body) =>
             body.transform.parent == null ? null : body.transform.parent.GetComponentInParent<ArticulationBody>();
 
+        /// <summary>A joint's axis relative to the root (Unity coordinates) from manifest.physics.joints, or zero if unknown.</summary>
         Vector3 AxisFromManifest(string joint)
         {
             var a = Joints[joint]?["axis_unity_root"] as JArray;
@@ -250,13 +411,27 @@ namespace MRC.Feasibility
         {
             for (int i = 0; i < steps; i++)
             {
-                UpdateCouplings();
+                StepControllers(dt);
                 Physics.Simulate(dt);
             }
         }
 
+        /// <summary>
+        /// Everything that runs before each physics step: drive chain, arm profiles, passive-joint damping,
+        /// linkages. The scene (RoverTeleop / RosRoverBridge FixedUpdate) and tests (Simulate) both call this.
+        /// </summary>
+        public void StepControllers(float dt)
+        {
+            DriveControl.Step(dt);
+            ArmControl.Step(dt);
+            ApplyPassiveDamping();
+            UpdateCouplings();
+        }
+
+        /// <summary>Height of the root above the robot's lowest collider point, measured at spawn (used by PlaceAt).</summary>
         float rootAboveLowest;
 
+        /// <summary>Create a 500 m x 500 m flat test ground (its friction comes from the registry's tyre-on-concrete values when present).</summary>
         public void CreateGround(float staticFriction = 1.0f, float dynamicFriction = 0.8f)
         {
             Ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -268,6 +443,7 @@ namespace MRC.Feasibility
                 dynamicFriction = dynamicFriction,
                 frictionCombine = PhysicsMaterialCombine.Average,
             };
+            SurfaceFriction.Register(material, "concrete");   // registry tyre-on-concrete friction, if the robot has one
             Ground.GetComponent<Collider>().sharedMaterial = material;
         }
 
@@ -278,6 +454,7 @@ namespace MRC.Feasibility
             return Robot.GetComponentsInChildren<Collider>().Where(c => c.enabled).Min(c => c.bounds.min.y);
         }
 
+        /// <summary>Lift the rover so its lowest collider point is `clearance` metres above y = 0.</summary>
         public void PlaceAboveGround(float clearance)
         {
             float lift = clearance - LowestPoint();
@@ -326,7 +503,7 @@ namespace MRC.Feasibility
             return (wheels, Mathf.Max(0.1f, right - left), radius);
         }
 
-        /// <summary>Skid-steer drive: forward speed (m/s) and turn rate (rad/s, positive = left).</summary>
+        /// <summary>Raw skid-steer drive: sets wheel targets instantly, with no limits (DriveControl is the realistic path).</summary>
         public void Drive(float speed, float turnRate, float trackWidth, float wheelRadius, IReadOnlyList<string> wheels)
         {
             Vector3 forward = Vector3.ProjectOnPlane(Root.transform.forward, Root.transform.up).normalized;
@@ -346,10 +523,11 @@ namespace MRC.Feasibility
                 var body = JointBody(name);
                 if (body == null) continue;
                 var drive = body.xDrive;
-                float? force = (float?)Joints[name]["unity_drive"]["force_limit"];
+                float? urdfEffort = (float?)Joints[name]["unity_drive"]["force_limit"];
                 drive.stiffness = 0f;
                 drive.damping = WheelDamping;
-                drive.forceLimit = force ?? WheelDefaultForce;
+                // Registry (or -param) first: the URDF has no wheel effort for the OSU rover.
+                drive.forceLimit = Parameters.Float("wheel_max_torque_nm") ?? urdfEffort ?? WheelDefaultForce;
                 drive.targetVelocity = 0f;
                 body.xDrive = drive;
             }
@@ -361,24 +539,35 @@ namespace MRC.Feasibility
                 float? force = (float?)Joints[name]["unity_drive"]["force_limit"];
                 drive.stiffness = ArmStiffness;
                 drive.damping = ArmDamping;
-                drive.forceLimit = force ?? 100f;
+                drive.forceLimit = (Parameters.IsOverridden("arm_max_torque_nm") ? Parameters.Float("arm_max_torque_nm") : null)
+                                   ?? force ?? 100f;
                 drive.target = 0f;
                 body.xDrive = drive;
             }
-            // Passive joints (free bogies etc.): the URDF's own <dynamics damping>, in N*m*s/rad like Unity's drive.
+            ArmControl.Reset();
+            // Passive joints (free bogies etc.): URDF <dynamics> friction (Coulomb, N*m) and damping (N*m*s/rad),
+            // or the registry's passive_joint_friction_nm / passive_joint_damping_nms when given.
+            // Coulomb friction = a velocity drive to 0 whose torque is capped at the friction torque: it holds the
+            // joint still below that torque (stiction) and resists with exactly that torque when moving.
+            // Viscous damping is then added as an explicit torque each step (ApplyPassiveDamping).
+            PassiveJoints.Clear();
             var managed = new HashSet<string>(LockedJoints.Concat(Springs.Select(sp => sp.Joint)).Concat(Couplings.Select(c => c.Follower)));
             foreach (var name in JointsWithRole("suspension").Concat(JointsWithRole("passive")))
             {
                 var body = JointBody(name);
-                float damping = (float?)Joints[name]["urdf_dynamics"]?["damping"] ?? 0f;
-                if (body == null || managed.Contains(name) || damping <= 0f) continue;
+                if (body == null || managed.Contains(name) || body.dofCount == 0) continue;
+                float friction = Parameters.Float("passive_joint_friction_nm") ?? (float?)Joints[name]["urdf_dynamics"]?["friction"] ?? 0f;
+                float damping = Parameters.Float("passive_joint_damping_nms") ?? (float?)Joints[name]["urdf_dynamics"]?["damping"] ?? 0f;
+                if (friction <= 0f && damping <= 0f) continue;
                 var drive = body.xDrive;
                 drive.driveType = ArticulationDriveType.Force;
                 drive.stiffness = 0f;
-                drive.damping = damping;
-                drive.forceLimit = float.MaxValue;
                 drive.targetVelocity = 0f;
+                if (friction > 0f) { drive.damping = CoulombDriveDamping; drive.forceLimit = friction; }
+                else { drive.damping = damping; drive.forceLimit = float.MaxValue; }
                 body.xDrive = drive;
+                PassiveJoints.Add(new PassiveJoint { Joint = name, Body = body, Parent = ParentBody(body),
+                                                     FrictionNm = friction, DampingNms = friction > 0f ? damping : 0f });
             }
             foreach (var spring in Springs)
             {
@@ -405,6 +594,40 @@ namespace MRC.Feasibility
             }
         }
 
+        /// <summary>One free joint with friction/damping (see ConfigureDrives).</summary>
+        public class PassiveJoint
+        {
+            /// <summary>Name of the passive joint.</summary>
+            public string Joint;
+            /// <summary>The joint's body (child link).</summary>
+            public ArticulationBody Body;
+            /// <summary>The joint's parent body (receives the damping reaction).</summary>
+            public ArticulationBody Parent;
+            /// <summary>Coulomb friction torque (N*m): the drive's torque cap.</summary>
+            public float FrictionNm;
+            /// <summary>Viscous damping (N*m per rad/s) applied explicitly; 0 when the drive itself does the damping.</summary>
+            public float DampingNms;
+        }
+
+        /// <summary>Every free joint with friction or damping (bogie pivots), set up by ConfigureDrives.</summary>
+        public List<PassiveJoint> PassiveJoints { get; } = new List<PassiveJoint>();
+        /// <summary>Drive damping used for Coulomb friction: high enough that the torque cap (the friction) always decides.</summary>
+        const float CoulombDriveDamping = 1e4f;   // N*m per rad/s: stiff enough that the torque cap (friction) decides
+
+        /// <summary>Viscous damping on passive joints that also have Coulomb friction (their drive is the friction).</summary>
+        void ApplyPassiveDamping()
+        {
+            foreach (var pj in PassiveJoints)
+            {
+                if (pj.DampingNms <= 0f || pj.Parent == null) continue;
+                float omega = pj.Body.jointVelocity[0];            // rad/s
+                Vector3 torque = JointAxisWorld(pj.Body) * (-pj.DampingNms * omega);
+                pj.Body.AddTorque(torque);
+                pj.Parent.AddTorque(-torque);
+            }
+        }
+
+        /// <summary>Set a wheel's target speed in deg/s (Unity's unit). Prefer DriveControl.Command for realistic driving.</summary>
         public void SetWheelSpeed(string joint, float degreesPerSecond)
         {
             var body = JointBody(joint);
@@ -413,8 +636,10 @@ namespace MRC.Feasibility
             body.xDrive = drive;
         }
 
+        /// <summary>Move an arm joint to `degrees`: through the real joint limits when known (ArmControl).</summary>
         public void SetArmTarget(string joint, float degrees)
         {
+            if (ArmControl != null && ArmControl.Manages(joint)) { ArmControl.SetTarget(joint, degrees); return; }
             var body = JointBody(joint);
             var drive = body.xDrive;
             drive.target = degrees;
@@ -451,18 +676,29 @@ namespace MRC.Feasibility
             return bounds.size.y / 2f;
         }
 
+        /// <summary>True if any link has a NaN or infinite position or velocity (the simulation blew up).</summary>
         public bool AnyNaN() =>
             Links.Values.Any(b => !IsFinite(b.transform.position) || !IsFinite(b.linearVelocity));
 
-        public float MaxLinkSpeed() => Links.Values.Max(b => b.linearVelocity.magnitude);
+        /// <summary>Links lighter than this are pipeline placeholders (URDF links without mass), not real parts.</summary>
+        public const float PlaceholderMassKg = 0.01f;
 
-        public string FastestLink() => Links.Values.OrderByDescending(b => b.linearVelocity.magnitude).First().name;
+        /// <summary>Fastest link speed (m/s); realPartsOnly ignores 1 g placeholder links.</summary>
+        public float MaxLinkSpeed(bool realPartsOnly = false) =>
+            Links.Values.Where(b => !realPartsOnly || b.mass >= PlaceholderMassKg).Max(b => b.linearVelocity.magnitude);
+
+        /// <summary>Name of the fastest-moving link; realPartsOnly ignores 1 g placeholder links.</summary>
+        public string FastestLink(bool realPartsOnly = false) => Links.Values
+            .Where(b => !realPartsOnly || b.mass >= PlaceholderMassKg)
+            .OrderByDescending(b => b.linearVelocity.magnitude).First().name;
 
         /// <summary>Angle in degrees between the chassis "up" and world up.</summary>
         public float TiltDegrees() => Vector3.Angle(Root.transform.up, Vector3.up);
 
+        /// <summary>Sum of every body's mass (kg), as Unity simulates it.</summary>
         public float TotalMass() => Links.Values.Sum(b => b.mass);
 
+        /// <summary>Remove the robot and the ground immediately (tests run back to back in one frame).</summary>
         public void Destroy()
         {
             // Immediate: tests run back to back in one frame, and a deferred Destroy would leave
@@ -471,6 +707,7 @@ namespace MRC.Feasibility
             if (Ground != null) UnityEngine.Object.DestroyImmediate(Ground);
         }
 
+        /// <summary>True if no component of v is NaN or infinite.</summary>
         static bool IsFinite(Vector3 v) =>
             !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) ||
               float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));

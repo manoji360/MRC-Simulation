@@ -18,10 +18,12 @@ from .errors import PipelineError, ValidationError
 
 
 def _log(message: str) -> None:
+    """Print one progress line ('  - message') immediately."""
     print(f"  - {message}", flush=True)
 
 
 def _config_from_args(args: argparse.Namespace) -> Config:
+    """Build the Config: the --config file (if any), then command-line overrides; validated."""
     config = load_config(args.config) if getattr(args, "config", None) else Config()
     overrides = {}
     if getattr(args, "max_links", None) is not None:
@@ -40,6 +42,7 @@ def _config_from_args(args: argparse.Namespace) -> Config:
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
+    """'check' command: print the report. Exit 0 = ready, 2 = problems found."""
     from .pipeline import check
     from .report import render_check
 
@@ -50,6 +53,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 
 def _cmd_prepare(args: argparse.Namespace) -> int:
+    """'prepare' command: build the Unity-ready folder and print what was written."""
     from .pipeline import prepare
 
     config = _config_from_args(args)
@@ -71,6 +75,7 @@ def _cmd_prepare(args: argparse.Namespace) -> int:
 
 
 def _cmd_rebuild(args: argparse.Namespace) -> int:
+    """'rebuild' command: rebuild from a manifest and compare with the original. Exit 2 if they differ."""
     from .merge import rebuild
 
     result = rebuild(args.manifest, args.output)
@@ -89,6 +94,7 @@ def _cmd_rebuild(args: argparse.Namespace) -> int:
 
 
 def _cmd_init_config(args: argparse.Namespace) -> int:
+    """'init-config' command: write the example settings file (refuses to overwrite without --force)."""
     path = Path(args.path)
     if path.exists() and not args.force:
         raise PipelineError(f"{path} already exists.", hint="Use --force to overwrite it.")
@@ -98,6 +104,7 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """The argparse parser with the check / prepare / rebuild / init-config commands and their options."""
     parser = argparse.ArgumentParser(
         prog="urdf_pipeline",
         description="Check a URDF robot model and prepare it for import into Unity.",
@@ -139,6 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point. Exit codes: 0 ok, 1 user-fixable error, 2 invalid URDF / check failed, 3 internal bug."""
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

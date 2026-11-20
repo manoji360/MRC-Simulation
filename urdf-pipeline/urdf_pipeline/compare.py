@@ -9,6 +9,7 @@ from .model import Robot
 
 
 def _norm_value(value: str):
+    """Normalise an attribute value: numbers are compared by value (1, 1.0, 1e0 equal); text as is."""
     tokens = value.split()
     if not tokens:
         return ""

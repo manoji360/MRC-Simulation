@@ -76,6 +76,7 @@ namespace MRC.Environment
             return mesh;
         }
 
+        /// <summary>A mesh with flat shading: every triangle gets its own vertices, so normals are per face.</summary>
         static Mesh Flat(Vector3[] vertices, int[] triangles, string name)
         {
             // Unshared vertices give crisp faceted shading.
@@ -88,6 +89,7 @@ namespace MRC.Environment
             return mesh;
         }
 
+        /// <summary>Vertices and triangles of a unit icosahedron (the starting shape of the rocks).</summary>
         static (List<Vector3>, List<int>) Icosahedron()
         {
             float p = (1f + Mathf.Sqrt(5f)) / 2f;

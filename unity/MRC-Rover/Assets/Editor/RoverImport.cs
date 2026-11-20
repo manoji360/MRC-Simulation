@@ -18,8 +18,10 @@ using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
+/// <summary>Imports a folder made by urdf_pipeline prepare as a prefab, and records import metrics (import.json).</summary>
 public static class RoverImport
 {
+    /// <summary>Batch entry point: -executeMethod RoverImport.ImportFromCommandLine -prepared &lt;folder&gt; -variant &lt;name&gt; [-convex vhacd|unity]; exits 0 or 1.</summary>
     public static void ImportFromCommandLine()
     {
         int exitCode = 0;
@@ -39,6 +41,7 @@ public static class RoverImport
         EditorApplication.Exit(exitCode);
     }
 
+    /// <summary>Copy the prepared folder into Assets/Robots/&lt;variant&gt;/, run the URDF Importer, disable its Controller, set exact inertia, save the prefab and write import.json.</summary>
     public static void Import(string preparedDir, string variant, string convex)
     {
         var errors = new List<string>();
@@ -163,6 +166,7 @@ public static class RoverImport
         return count;
     }
 
+    /// <summary>Copy a folder and everything in it (the URDF Importer needs the robot inside Assets/).</summary>
     static void CopyDirectory(string source, string destination)
     {
         foreach (string dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))

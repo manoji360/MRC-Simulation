@@ -8,8 +8,11 @@ namespace MRC.Feasibility
     /// <summary>Command-line arguments and result-file locations shared by import and tests.</summary>
     public static class FeasibilityPaths
     {
+        /// <summary>The Unity project folder (the parent of Assets/).</summary>
         public static string ProjectRoot => Path.GetDirectoryName(Application.dataPath);
+        /// <summary>Folder where every test and import writes its JSON results: FeasibilityResults/.</summary>
         public static string ResultsRoot => Path.Combine(ProjectRoot, "FeasibilityResults");
+        /// <summary>File remembering which robot variant was imported last (FeasibilityResults/current.json).</summary>
         static string CurrentFile => Path.Combine(ResultsRoot, "current.json");
 
         /// <summary>Value after `name` on the command line, or null.</summary>
@@ -21,6 +24,7 @@ namespace MRC.Feasibility
             return null;
         }
 
+        /// <summary>Write a result file to FeasibilityResults/&lt;variant&gt;/&lt;fileName&gt; (indented JSON).</summary>
         public static void WriteResult(string variant, string fileName, JObject data)
         {
             string dir = Path.Combine(ResultsRoot, variant);
@@ -28,6 +32,7 @@ namespace MRC.Feasibility
             File.WriteAllText(Path.Combine(dir, fileName), data.ToString());
         }
 
+        /// <summary>Record the variant just imported (its prefab and manifest), so tests know what to load.</summary>
         public static void SetCurrentVariant(string variant, string prefabPath, string manifestPath)
         {
             Directory.CreateDirectory(ResultsRoot);

@@ -10,14 +10,21 @@ using UnityEngine;
 
 namespace MRC.Feasibility.Tests
 {
+    /// <summary>Checks the imported robot against the original URDF data (via the manifest); results in audit.json.</summary>
     public class ModelAuditTests
     {
+        /// <summary>Robot variant under test (folder under Assets/Robots/).</summary>
         static string variant;
+        /// <summary>The variant's pipeline manifest.</summary>
         static JObject manifest;
+        /// <summary>The variant's imported prefab.</summary>
         static GameObject prefab;
+        /// <summary>Measurements written to FeasibilityResults/&lt;variant&gt;/audit.json.</summary>
         static JObject results;
+        /// <summary>The rover spawned for the current test.</summary>
         RoverRig rig;
 
+        /// <summary>Once before all tests: load the robot (skipped if none imported) and start the results.</summary>
         [OneTimeSetUp]
         public void Load()
         {
@@ -27,12 +34,14 @@ namespace MRC.Feasibility.Tests
             results = new JObject { ["variant"] = variant };
         }
 
+        /// <summary>Once after all tests: write audit.json.</summary>
         [OneTimeTearDown]
         public void Save()
         {
             if (results != null) FeasibilityPaths.WriteResult(variant, "audit.json", results);
         }
 
+        /// <summary>Before each test: spawn the rover at the origin (no simulation).</summary>
         [SetUp]
         public void Spawn()
         {
@@ -40,12 +49,16 @@ namespace MRC.Feasibility.Tests
             rig.Spawn(prefab);
         }
 
+        /// <summary>After each test: remove the rover.</summary>
         [TearDown]
         public void Cleanup() => rig?.Destroy();
 
+        /// <summary>[x, y, z] JSON array -&gt; Vector3.</summary>
         static Vector3 V3(JToken t) => new Vector3((float)t[0], (float)t[1], (float)t[2]);
+        /// <summary>Round for readable JSON.</summary>
         static float R(float v, int d = 4) => (float)System.Math.Round(v, d);
 
+        /// <summary>3x3 JSON rows -&gt; matrix.</summary>
         static float[,] Tensor(JToken rows)
         {
             var m = new float[3, 3];
@@ -65,6 +78,7 @@ namespace MRC.Feasibility.Tests
             return m;
         }
 
+        /// <summary>Largest element difference between two tensors, relative to the largest element of b.</summary>
         static float RelativeError(float[,] a, float[,] b)
         {
             float diff = 0f, norm = 0f;
@@ -73,6 +87,7 @@ namespace MRC.Feasibility.Tests
             return Mathf.Sqrt(diff) / Mathf.Max(Mathf.Sqrt(norm), 1e-9f);
         }
 
+        /// <summary>Every link's mass, centre of mass (within 1 mm) and full inertia tensor (within 1 %) match the manifest.</summary>
         [Test]
         public void InertialsMatchUrdf()
         {
@@ -106,6 +121,7 @@ namespace MRC.Feasibility.Tests
             Assert.Less(worstTensor, 0.01f, $"Inertia of '{worstTensorLink}' differs from the URDF by {worstTensor:P1}.");
         }
 
+        /// <summary>The whole robot's centre of mass is within 5 mm of the URDF value.</summary>
         [Test]
         public void RobotCenterOfMassMatchesUrdf()
         {
@@ -130,6 +146,7 @@ namespace MRC.Feasibility.Tests
             Assert.Less(error, 0.005f, $"Robot centre of mass is {error * 1000f:F1} mm from the URDF value.");
         }
 
+        /// <summary>Every wheel spins about its URDF axis (within 0.5 deg; a reversed direction is allowed and reported).</summary>
         [Test]
         public void WheelAxesMatchUrdf()
         {
@@ -157,6 +174,7 @@ namespace MRC.Feasibility.Tests
             Assert.Less(worst, 0.5f, $"A wheel spins about an axis {worst:F2} deg away from the URDF axis.");
         }
 
+        /// <summary>Wheel collision hulls are round within 5 % (an out-of-round wheel makes the rover bump).</summary>
         [Test]
         public void WheelCollidersAreRound()
         {

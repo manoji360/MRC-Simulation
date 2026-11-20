@@ -11,13 +11,16 @@ from .errors import PipelineError, ValidationError
 from .model import JOINT_TYPES, Robot
 
 _XACRO_MARKERS = (b"ros.org/wiki/xacro", b"<xacro:", b"$(find ")
+"""Byte patterns that only appear in un-expanded xacro files."""
 XACRO_HINT = (
     "Expand it to plain URDF first. In the WSL Ubuntu terminal: "
     "xacro robot.urdf.xacro > robot.urdf  (see urdf-pipeline/env/wsl2-setup.md)."
 )
+"""Fix text shown when a xacro file is given instead of a URDF."""
 
 
 def _local(tag: str) -> str:
+    """Tag name without its XML namespace."""
     return tag.rsplit("}", 1)[-1]
 
 
@@ -39,6 +42,7 @@ def load_urdf(path: str | Path) -> Robot:
 
 
 _COMMENT = re.compile(rb"<!--.*?-->", re.DOTALL)
+"""Regex for XML comments (removed before looking for xacro markers)."""
 
 
 def is_xacro(data: bytes) -> bool:
@@ -49,6 +53,7 @@ def is_xacro(data: bytes) -> bool:
 
 
 def load_valid_urdf(path: str | Path) -> Robot:
+    """load_urdf() plus validate(): raises ValidationError listing every structural problem."""
     robot = load_urdf(path)
     problems = validate(robot)
     if problems:
@@ -57,6 +62,7 @@ def load_valid_urdf(path: str | Path) -> Robot:
 
 
 def parse_urdf_string(data: str | bytes, source: str = "<string>") -> Robot:
+    """Parse URDF text (str or bytes) into a Robot; `source` names it in error messages."""
     try:
         root = ET.fromstring(data)
     except ET.ParseError as exc:
@@ -143,6 +149,7 @@ def validate(robot: Robot) -> list[str]:
 
 # -- writing ---------------------------------------------------------------------------
 def element_to_string(element: ET.Element) -> str:
+    """An XML element as text (stored in the manifest so rebuild can restore it exactly)."""
     clone = copy.deepcopy(element)
     clone.tail = None
     ET.indent(clone, space="  ")
@@ -150,10 +157,12 @@ def element_to_string(element: ET.Element) -> str:
 
 
 def element_from_string(text: str) -> ET.Element:
+    """Parse text from element_to_string() back into an element."""
     return ET.fromstring(text)
 
 
 def to_xml_string(robot: Robot) -> str:
+    """The whole robot as URDF XML text (links, joints, then extras, in their original order)."""
     attrib = dict(robot.attrib)
     attrib["name"] = robot.name
     root = ET.Element("robot", attrib)
@@ -168,4 +177,5 @@ def to_xml_string(robot: Robot) -> str:
 
 
 def write_urdf(robot: Robot, path: str | Path) -> None:
+    """Write the robot to a .urdf file (UTF-8, LF line endings)."""
     Path(path).write_text(to_xml_string(robot), encoding="utf-8", newline="\n")

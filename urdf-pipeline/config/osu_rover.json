@@ -8,5 +8,222 @@
     "rover_front_right_link_joint",
     "rover_back_left_link_joint",
     "rover_back_right_link_joint"
-  ]
+  ],
+  "_drive_limits": "Real drive chain (Rover_2026_2027/software/ros_packages/rover2_control): joy_to_drive.py MAX_LINEAR_VEL 3.7 m/s, MAX_ANGULAR_VEL 4 rad/s -> diff_drive_controller (config/rover_drive.yaml: update_rate 30 Hz, linear.x max_acceleration 2.0 m/s^2, angular.z max_acceleration 2.0 rad/s^2; deceleration = acceleration) -> ODrive ramped velocity mode (drive_can_control.py VEL_RAMP = 50*4 = 200 motor turns/s^2, gear ratio 50 -> 4 wheel rev/s^2). The controller mixes turns with its tuned wheel_separation 1.15 m and wheel_radius 0.146 m (rover_drive.yaml), so the simulated wheels get the same speed commands as the real ones.",
+  "drive_limits": {
+    "max_linear_speed_mps": 3.7,
+    "max_angular_speed_radps": 4.0,
+    "max_linear_accel_mps2": 2.0,
+    "max_linear_decel_mps2": 2.0,
+    "max_angular_accel_radps2": 2.0,
+    "wheel_accel_rev_s2": 4.0,
+    "controller_rate_hz": 30,
+    "controller_wheel_separation_m": 1.15,
+    "controller_wheel_radius_m": 0.146
+  },
+  "_joint_limits": "Real arm joint limits from Rover_2026_2027/software/ros_packages/rover2_arm/config/joint_limits.yaml (MoveIt). Shoulder is reduced there to 0.28 rad/s / 1.12 rad/s^2 ('should be by measured').",
+  "joint_limits": {
+    "rover_arm_base_joint": {
+      "max_velocity": 0.565478,
+      "max_acceleration": 2.261947
+    },
+    "rover_arm_shoulder_joint": {
+      "max_velocity": 0.28,
+      "max_acceleration": 1.12
+    },
+    "rover_arm_elbow_pitch_joint": {
+      "max_velocity": 0.604799,
+      "max_acceleration": 2.419194
+    },
+    "rover_arm_elbow_roll_joint": {
+      "max_velocity": 1.884956,
+      "max_acceleration": 7.539822
+    },
+    "rover_arm_wrist_pitch_joint": {
+      "max_velocity": 0.611337,
+      "max_acceleration": 2.445348
+    },
+    "rover_arm_wrist_roll_joint": {
+      "max_velocity": 2.261947,
+      "max_acceleration": 9.047787
+    }
+  },
+  "_physical_parameters": "Every physical number the simulation depends on, with where it came from. status: measured > rover_code > urdf > cad > estimate > assumed. When the rover is measured, replace value/status/source here (docs/rover-measurement-guide.md) and re-run prepare.",
+  "physical_parameters": {
+    "total_mass_kg": {
+      "value": 50.613,
+      "unit": "kg",
+      "status": "cad",
+      "source": "URDF link masses (CAD export; the same export's inertia was physically impossible)",
+      "uncertainty": "unknown, +/-10 % assumed",
+      "applies_to": "all link masses (prepare scales them when this changes)"
+    },
+    "center_of_mass_offset_m": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "unit": "m",
+      "status": "cad",
+      "source": "CAD centre of mass: 0.50 m above the ground, 1.8 cm ahead of the base origin",
+      "uncertainty": "+/-5 cm assumed (height matters most: tip-over and braking limits)",
+      "applies_to": "all link centres of mass (prepare shifts them)"
+    },
+    "wheel_radius_m": {
+      "value": 0.154,
+      "unit": "m",
+      "status": "cad",
+      "source": "wheel collision mesh; rover code uses 0.146 (rover_drive.yaml, odometry-tuned) and 0.15 (drive_can_control.py WHEEL_CIRCUM)",
+      "uncertainty": "+/-0.008 m",
+      "applies_to": "documentation; the controller uses drive_limits.controller_wheel_radius_m"
+    },
+    "tyre_mu_concrete_static": {
+      "value": 0.75,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "test course pad, Unity test ground"
+    },
+    "tyre_mu_concrete_dynamic": {
+      "value": 0.7,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "test course pad, Unity test ground"
+    },
+    "tyre_mu_sand_static": {
+      "value": 0.625,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "desert terrain"
+    },
+    "tyre_mu_sand_dynamic": {
+      "value": 0.575,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "desert terrain"
+    },
+    "tyre_mu_rock_static": {
+      "value": 0.7,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "rocks and rubble"
+    },
+    "tyre_mu_rock_dynamic": {
+      "value": 0.65,
+      "unit": "-",
+      "status": "assumed",
+      "source": "Not measured. Equals the friction the simulation used so far (Unity default wheel 0.6 averaged with the surface); typical rubber values span about 0.4-0.9",
+      "uncertainty": "+/-40 %",
+      "applies_to": "rocks and rubble"
+    },
+    "wheel_max_torque_nm": {
+      "value": 30.0,
+      "unit": "N*m",
+      "status": "assumed",
+      "source": "No ODrive current limit / motor torque constant in the repo (they are stored on the controllers)",
+      "uncertainty": "+/-50 %",
+      "applies_to": "wheel drive torque cap"
+    },
+    "passive_joint_friction_nm": {
+      "value": null,
+      "unit": "N*m",
+      "status": "urdf",
+      "source": "null = each joint's URDF <dynamics friction> (0.2 N*m on the bogie pivots)",
+      "uncertainty": "unknown",
+      "applies_to": "Coulomb friction on free bogie pivots"
+    },
+    "passive_joint_damping_nms": {
+      "value": null,
+      "unit": "N*m*s/rad",
+      "status": "urdf",
+      "source": "null = each joint's URDF <dynamics damping> (2.0 on the bogie pivots)",
+      "uncertainty": "unknown",
+      "applies_to": "viscous damping on free bogie pivots"
+    },
+    "arm_joint_limits": {
+      "value": "see joint_limits",
+      "unit": "rad/s, rad/s^2",
+      "status": "rover_code",
+      "source": "Rover_2026_2027/software/ros_packages/rover2_arm/config/joint_limits.yaml",
+      "uncertainty": "shoulder marked 'should be by measured'",
+      "applies_to": "arm motion profile"
+    },
+    "arm_max_torque_nm": {
+      "value": 100.0,
+      "unit": "N*m",
+      "status": "urdf",
+      "source": "URDF effort=100 on every arm joint (looks like a placeholder; ODrive limits are not in the repo)",
+      "uncertainty": "unknown",
+      "applies_to": "arm drive torque caps"
+    },
+    "imu_rate_hz": {
+      "value": 10,
+      "unit": "Hz",
+      "status": "rover_code",
+      "source": "Rover_2026_2027/software/ros_packages/rover2_odometry/rover2_odometry/imu08x.py DEFAULT_HERTZ (BNO08x); the URDF Gazebo block says 100",
+      "uncertainty": "exact",
+      "applies_to": "IMU simulation (phase 2)"
+    },
+    "gps_rate_hz": {
+      "value": 5,
+      "unit": "Hz",
+      "status": "urdf",
+      "source": "URDF <gazebo> navsat sensor",
+      "uncertainty": "exact",
+      "applies_to": "GPS simulation (phase 2)"
+    },
+    "gps_noise_m": {
+      "value": 1.0,
+      "unit": "m",
+      "status": "urdf",
+      "source": "URDF <gazebo> navsat noise stddev",
+      "uncertainty": "unknown for the real receiver",
+      "applies_to": "GPS simulation (phase 2)"
+    },
+    "camera_rate_hz": {
+      "value": 15,
+      "unit": "Hz",
+      "status": "urdf",
+      "source": "URDF <gazebo> d405/d455 rgbd_camera",
+      "uncertainty": "exact",
+      "applies_to": "camera simulation (phase 2)"
+    },
+    "camera_resolution": {
+      "value": [
+        1280,
+        720
+      ],
+      "unit": "px",
+      "status": "urdf",
+      "source": "URDF <gazebo> d405/d455 rgbd_camera",
+      "uncertainty": "exact",
+      "applies_to": "camera simulation (phase 2)"
+    },
+    "camera_hfov_rad": {
+      "value": 1.518436,
+      "unit": "rad",
+      "status": "urdf",
+      "source": "URDF <gazebo> d405/d455 rgbd_camera",
+      "uncertainty": "exact",
+      "applies_to": "camera simulation (phase 2)"
+    },
+    "lidar_model": {
+      "value": "Unitree L1",
+      "unit": "-",
+      "status": "rover_code",
+      "source": "Rover_2026_2027/software/ros_packages/unitree_lidar_ros2/launch/launch.py (unilidar/cloud, cloud_scan_num 18)",
+      "uncertainty": "datasheet values",
+      "applies_to": "lidar simulation (phase 2)"
+    }
+  }
 }

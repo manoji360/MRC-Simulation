@@ -14,35 +14,76 @@ from pathlib import Path
 from .errors import PipelineError
 
 UNITY_LINK_LIMIT = 64
+"""Unity's hard limit on links (ArticulationBodies) in one articulation."""
 COLLAPSE_MODES = ("auto", "always", "never")
+"""Allowed values of collapse_frames."""
 VERTEX_MODES = ("raw", "welded")
+"""Allowed values of mesh_vertex_mode."""
+DRIVE_LIMIT_KEYS = (
+    "max_linear_speed_mps",      # top forward/backward speed
+    "max_angular_speed_radps",   # top turn rate
+    "max_linear_accel_mps2",     # speeding up
+    "max_linear_decel_mps2",     # slowing down (defaults to max_linear_accel_mps2)
+    "max_angular_accel_radps2",  # turn-rate change
+    "wheel_accel_rev_s2",        # per-wheel motor ramp (e.g. ODrive vel_ramp_rate / gear ratio)
+    "controller_rate_hz",        # how often the drive controller updates its command
+    "controller_wheel_separation_m",  # wheel_separation the controller uses to mix turning (skid steer: tuned)
+    "controller_wheel_radius_m",      # wheel_radius the controller uses to turn m/s into wheel speed
+)
+"""Allowed keys of the drive_limits setting (see the comment on each)."""
 
 
 @dataclass
 class Config:
+    """Every setting prepare/check understand. Load from JSON with load_config(); validate with check()."""
     max_links: int = 60
+    """Most links allowed in one Unity articulation (1-64; default 60 leaves headroom)."""
     collapse_frames: str = "auto"
+    """Remove frame-only links: 'auto' (only when over max_links), 'always' or 'never'."""
     split_meshes: bool = False
+    """Cut big STL meshes into chunk files (off: Unity's importer already splits them)."""
     max_vertices: int = 65535
+    """Vertex limit per mesh chunk when split_meshes is on."""
     mesh_vertex_mode: str = "raw"
+    """How vertices are counted for the limit: 'raw' (3 per triangle, like Unity) or 'welded'."""
     keep_together: list[list[str]] = field(default_factory=list)
+    """Groups of link names that must stay in one articulation part."""
     cut_cost: dict[str, int] = field(default_factory=dict)
+    """Cost of cutting each joint type when splitting the robot (lower = cut first)."""
     mesh_roots: list[str] = field(default_factory=list)
+    """Extra folders searched for mesh files (relative to the config file)."""
     ignore_missing_meshes: bool = False
+    """Continue even if some mesh files cannot be found."""
     joint_roles: dict[str, str] = field(default_factory=dict)
+    """Corrections to the guessed joint roles: joint name -> wheel, suspension, arm or passive."""
     massless_link_mass_kg: float | None = 0.001
+    """Placeholder mass (kg) for links without <inertial>; None leaves them alone (Unity would use 1 kg)."""
     fix_inertia: bool = False
+    """Replace inertia that disagrees with the link's mesh by more than 3x with mesh-derived values."""
     # Closed linkages URDF cannot describe (four-bars, differentials): follower joint -> how it follows.
     #   {"bogie_joint": {"leader": "link_joint", "multiplier": "opposite_rotation"}}
     # multiplier: a number, or "same_rotation" / "opposite_rotation" (sign worked out from the joint axes).
     joint_couplings: dict[str, dict] = field(default_factory=dict)
+    """Closed linkages URDF cannot express: follower joint -> {leader, multiplier, offset_deg}."""
     # Springs/dampers URDF cannot describe (suspension shocks): joint -> settings ("auto" = from the robot's weight).
     #   {"link_joint": {"stiffness_nm_per_rad": "auto", "damping_nms_per_rad": "auto", "rest_deg": 0, "max_sag_deg": 2}}
     joint_springs: dict[str, dict] = field(default_factory=dict)
+    """Springs/dampers URDF cannot express: joint -> {stiffness_nm_per_rad, damping_nms_per_rad, rest_deg, max_sag_deg}."""
     # Joints that cannot really move (e.g. a "linkage" whose bars meet at one pin): held fixed at zero in Unity.
     locked_joints: list[str] = field(default_factory=list)
+    """Joints held fixed at zero in Unity (the URDF itself is not changed)."""
+    # How the real drive controller limits speed and acceleration (URDF has no such data). Empty = no limits.
+    drive_limits: dict[str, float | None] = field(default_factory=dict)
+    """The real drive controller's speed/acceleration limits (keys in DRIVE_LIMIT_KEYS)."""
+    # Real per-joint motion limits (e.g. MoveIt joint_limits.yaml): {"joint": {"max_velocity": rad/s, "max_acceleration": rad/s^2}}
+    joint_limits: dict[str, dict] = field(default_factory=dict)
+    """Real joint motion limits: joint -> {max_velocity rad/s, max_acceleration rad/s^2}."""
+    # Every physical number the simulation depends on, with its source and certainty (see parameters.py).
+    physical_parameters: dict[str, dict] = field(default_factory=dict)
+    """Physical-parameter registry: name -> {value, unit, status, source, uncertainty, applies_to} (see parameters.py)."""
 
     def check(self) -> Config:
+        """Validate every setting; raise PipelineError with a plain-English message on the first bad one. Returns self."""
         def fail(message: str) -> None:
             raise PipelineError(f"Invalid setting: {message}", hint="Fix the value in your config file or command.")
 
@@ -104,6 +145,23 @@ class Config:
                      '"damping_nms_per_rad": "auto" | number, "rest_deg": 0, "max_sag_deg": 2}}.')
         if not isinstance(self.locked_joints, list) or not all(isinstance(j, str) for j in self.locked_joints):
             fail('locked_joints must be a list of joint names, e.g. ["front_link_joint"].')
+        if not isinstance(self.drive_limits, dict):
+            fail("drive_limits must map limit names to numbers, e.g. {\"max_linear_accel_mps2\": 2.0}.")
+        for key, value in self.drive_limits.items():
+            if key not in DRIVE_LIMIT_KEYS:
+                close = difflib.get_close_matches(key, DRIVE_LIMIT_KEYS, n=1)
+                fail(f"unknown drive_limits entry '{key}'" + (f" (did you mean '{close[0]}'?)" if close else
+                                                             f"; valid: {', '.join(DRIVE_LIMIT_KEYS)}") + ".")
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0):
+                fail(f"drive_limits['{key}'] must be a positive number or null; got {value!r}.")
+        if not isinstance(self.joint_limits, dict):
+            fail('joint_limits must map joint names to {"max_velocity": rad/s, "max_acceleration": rad/s^2}.')
+        for name, spec in self.joint_limits.items():
+            if (not isinstance(spec, dict) or set(spec) - {"max_velocity", "max_acceleration"}
+                    or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in spec.values())):
+                fail(f'joint_limits["{name}"] must look like {{"max_velocity": 0.5, "max_acceleration": 2.0}} (positive, rad/s and rad/s^2).')
+        from .parameters import check_parameters
+        check_parameters(self.physical_parameters)
         roles = ("wheel", "suspension", "arm", "passive")
         if not isinstance(self.joint_roles, dict) or not all(
             isinstance(k, str) and v in roles for k, v in self.joint_roles.items()
@@ -113,6 +171,9 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict, base_dir: Path | None = None) -> Config:
+        """Build a Config from parsed JSON. Keys starting with '_' are notes; unknown keys get a 'did you mean' hint.
+        mesh_roots are resolved relative to base_dir (the config file's folder).
+        """
         if not isinstance(data, dict):
             raise PipelineError("The config file must contain a JSON object ({ ... }).")
         known = {f.name for f in fields(cls)}
@@ -133,10 +194,12 @@ class Config:
         return config
 
     def to_dict(self) -> dict:
+        """All settings as a plain dict (written into the manifest)."""
         return asdict(self)
 
 
 def load_config(path: str | Path) -> Config:
+    """Read and validate a JSON config file; friendly errors for a missing file or bad JSON."""
     path = Path(path)
     if not path.is_file():
         raise PipelineError(f"Config file not found: {path}")
@@ -187,4 +250,17 @@ EXAMPLE_CONFIG = {
     "_locked_joints": "Optional: joints that should not move in simulation (held fixed at their zero position in Unity; "
                       "the URDF itself is not changed). Example: [\"front_link_joint\"]",
     "locked_joints": [],
+    "_drive_limits": "Optional: the real drive controller's limits, so Unity accelerates and brakes like the robot "
+                     "(URDF wheel joints usually have none). Keys: " + ", ".join(DRIVE_LIMIT_KEYS) + ". "
+                     "Example (diff_drive_controller): {\"max_linear_speed_mps\": 1.0, \"max_linear_accel_mps2\": 0.5}",
+    "drive_limits": {},
+    "_joint_limits": "Optional: real joint speed/acceleration limits (rad/s, rad/s^2), e.g. from MoveIt joint_limits.yaml. "
+                     "Unity moves those joints along a trapezoidal profile within them.",
+    "joint_limits": {},
+    "_physical_parameters": "Optional: every physical number with its source, e.g. {\"total_mass_kg\": {\"value\": 50.6, "
+                            "\"unit\": \"kg\", \"status\": \"measured\", \"source\": \"wheel scales 2026-11-20\", "
+                            "\"uncertainty\": \"±0.2 kg\", \"applies_to\": \"all link masses\"}}. status: measured, "
+                            "rover_code, urdf, cad, estimate or assumed. check prints everything not yet measured.",
+    "physical_parameters": {},
 }
+"""The file written by 'init-config': every setting with its default and a '_' help note."""

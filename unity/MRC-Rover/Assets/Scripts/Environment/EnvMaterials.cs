@@ -5,11 +5,24 @@ namespace MRC.Environment
     /// <summary>Shared render and physics materials (Built-in render pipeline, created at runtime).</summary>
     public static class EnvMaterials
     {
-        // Friction values: typical rover-testing estimates (rubber/plastic wheels on each surface).
+        // Default friction (used only for robots without tyre friction in their parameter registry). With a
+        // registry, SurfaceFriction overwrites these with the tyre-on-surface values (tyre_mu_<surface>_*).
+        /// <summary>Concrete (test course pad, steps, ramps). Friction overwritten by the registry's tyre_mu_concrete_* when present.</summary>
         public static readonly PhysicsMaterial Concrete = Physics("Concrete", 0.9f, 0.8f);
+        /// <summary>Desert sand (terrain). Friction overwritten by the registry's tyre_mu_sand_* when present.</summary>
         public static readonly PhysicsMaterial Sand = Physics("Desert sand", 0.65f, 0.55f);
+        /// <summary>Rock (rubble, scattered rocks). Friction overwritten by the registry's tyre_mu_rock_* when present.</summary>
         public static readonly PhysicsMaterial Rock = Physics("Rock", 0.8f, 0.7f);
 
+        /// <summary>Register the surfaces with SurfaceFriction so a robot's tyre friction values reach them.</summary>
+        static EnvMaterials()
+        {
+            MRC.Feasibility.SurfaceFriction.Register(Concrete, "concrete");
+            MRC.Feasibility.SurfaceFriction.Register(Sand, "sand");
+            MRC.Feasibility.SurfaceFriction.Register(Rock, "rock");
+        }
+
+        /// <summary>A physics material with no bounce and averaged friction.</summary>
         static PhysicsMaterial Physics(string name, float staticFriction, float dynamicFriction) =>
             new PhysicsMaterial(name)
             {
@@ -19,6 +32,7 @@ namespace MRC.Environment
                 frictionCombine = PhysicsMaterialCombine.Average,
             };
 
+        /// <summary>A matte (or slightly smooth) Standard-shader material in a plain colour.</summary>
         public static Material Color(Color color, float smoothness = 0.1f)
         {
             var shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
@@ -48,6 +62,7 @@ namespace MRC.Environment
             return texture;
         }
 
+        /// <summary>Seamlessly tiling Perlin noise at (u, v) in 0..1.</summary>
         static float TileNoise(float u, float v, float scale, float offset)
         {
             float a = Mathf.PerlinNoise(offset + u * scale, offset + v * scale);

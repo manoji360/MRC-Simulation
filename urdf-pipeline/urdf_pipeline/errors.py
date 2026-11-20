@@ -12,6 +12,7 @@ class PipelineError(Exception):
     """A problem the user can fix (bad input, missing file, bad config)."""
 
     def __init__(self, message: str, hint: str | None = None) -> None:
+        """Store the message plus an optional one-line 'Fix: ...' hint shown to the user."""
         super().__init__(message)
         self.hint = hint
 
@@ -20,6 +21,7 @@ class ValidationError(PipelineError):
     """The URDF is structurally invalid. `problems` lists every problem found."""
 
     def __init__(self, problems: list[str], source: str) -> None:
+        """Store every structural problem found and the file they were found in."""
         self.problems = list(problems)
         super().__init__(
             f"{source} is not a valid URDF ({len(self.problems)} problem(s) found).",

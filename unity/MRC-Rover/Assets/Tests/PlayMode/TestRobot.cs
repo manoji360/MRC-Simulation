@@ -10,6 +10,7 @@ namespace MRC.Feasibility.Tests
     /// <summary>Loads the imported robot (prefab + pipeline manifest) that the tests run against.</summary>
     public static class TestRobot
     {
+        /// <summary>The robot to test: -variant (or the last imported), its manifest and prefab. Ignores the test if none is imported.</summary>
         public static (string variant, JObject manifest, GameObject prefab) Load()
         {
             var current = FeasibilityPaths.CurrentVariant();

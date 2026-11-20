@@ -86,7 +86,7 @@ try {
             Tests      = "{0}/{1}" -f @($cases | Where-Object { $_.result -eq "Passed" }).Count, $cases.Count
             MsPerStep  = if ($phy) { $phy.performance.ms_per_step } else { "" }
             RealTimeX  = if ($phy) { $phy.performance.real_time_factor } else { "" }
-            SettleMps  = if ($phy) { $phy.settle.final_max_link_speed_mps } else { "" }
+            SettleSec  = if ($phy) { $phy.settle.settle_time_s } else { "" }
             DriveM     = if ($phy) { $phy.drive.distance_forward_m } else { "" }
             SlipPct    = if ($phy) { $phy.drive.slip_percent } else { "" }
             ArmErrDeg  = if ($phy) { $phy.arm.worst_error_deg } else { "" }

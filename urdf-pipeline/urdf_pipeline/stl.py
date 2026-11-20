@@ -15,13 +15,18 @@ from .errors import PipelineError
 
 # normal(3f) + v1(3f) + v2(3f) + v3(3f) + attribute byte count (H) = 50 bytes
 _TRIANGLE = struct.Struct("<12fH")
+"""One binary STL triangle: normal (3 floats), 3 vertices (9 floats), attribute byte count."""
 _HEADER_SIZE = 80
+"""Size of the binary STL header in bytes."""
 
 
 @dataclass
 class StlMesh:
+    """A triangle mesh exactly as stored in an STL file."""
     header: bytes
+    """The 80-byte header (binary) or 'solid <name>' line (ASCII), kept for writing back."""
     triangles: list[tuple]  # 13-tuples: nx, ny, nz, x1, y1, z1, x2, y2, z2, x3, y3, z3, attr
+    """Triangles as 13-tuples: nx, ny, nz, x1, y1, z1, x2, y2, z2, x3, y3, z3, attribute."""
 
     @property
     def raw_vertex_count(self) -> int:
@@ -30,10 +35,12 @@ class StlMesh:
 
     @property
     def welded_vertex_count(self) -> int:
+        """Vertices if shared corners are counted once (welded)."""
         return len(unique_vertices(self.triangles))
 
 
 def unique_vertices(triangles) -> set:
+    """Set of distinct vertex positions (x, y, z) in the triangles."""
     seen = set()
     for t in triangles:
         seen.add(t[3:6])
@@ -43,6 +50,7 @@ def unique_vertices(triangles) -> set:
 
 
 def _is_binary(data: bytes) -> bool:
+    """True if the bytes are a binary STL (the header's triangle count matches the file size)."""
     if len(data) < _HEADER_SIZE + 4:
         return False
     (count,) = struct.unpack_from("<I", data, _HEADER_SIZE)
@@ -63,6 +71,7 @@ def triangle_count(path: str | Path) -> int:
 
 
 _FLOAT = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+"""Regex for one floating-point number in an ASCII STL."""
 _FACET_RE = re.compile(
     rf"facet\s+normal\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})\s+outer\s+loop"
     rf"\s+vertex\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})"
@@ -70,9 +79,11 @@ _FACET_RE = re.compile(
     rf"\s+vertex\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})",
     re.IGNORECASE,
 )
+"""Regex for one ASCII STL facet (normal + three vertices)."""
 
 
 def read_stl(path: str | Path) -> StlMesh:
+    """Read a binary or ASCII STL file. Raises PipelineError if it is neither."""
     path = Path(path)
     data = path.read_bytes()
     if _is_binary(data):

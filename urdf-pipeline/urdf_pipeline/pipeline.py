@@ -22,51 +22,77 @@ from .mesh_split import needs_split, split_mesh, triangles_match
 from .meshes import chunk_uri, companion_files, is_absolute, mesh_uses, output_key, resolve_mesh
 from .model import Robot
 from .parse import element_to_string, load_urdf, validate, write_urdf
-from .physics import joint_couplings, joint_springs, locked_joints, physics_block, physics_issues, total_mass
+from .parameters import apply_mass_adjustment, fidelity_rows, mass_adjustment, parameters_block
+from .physics import drive_limits_block, joint_couplings, joint_limits_block, joint_springs, locked_joints, physics_block, unlimited_wheels, physics_issues, total_mass
 from .mass_properties import PLAUSIBLE_RATIO, inertia_plausibility, replace_inertia
 from .split import build_part_robots, plan_split, single_part_plan
 from .stl import read_stl, triangle_count, write_stl
 
 Log = Callable[[str], None]
+"""A progress-log function: takes one message string."""
 UNITY_MESH_VERTEX_LIMIT = 65535
+"""Unity's 16-bit mesh index limit: STL meshes above this many vertices get split by the importer."""
 
 
 def _quiet(_message: str) -> None:
+    """Log function that prints nothing (the default for prepare() when used as a library)."""
     pass
 
 
 # -- check -------------------------------------------------------------------------------
 @dataclass
 class CheckResult:
+    """Everything check() found, for render_check() to print."""
     file: str
+    """File name of the URDF checked."""
     robot: str
+    """Robot name."""
     links: int
+    """Number of links."""
     joints: int
+    """Number of joints."""
     joint_types: dict[str, int]
+    """Count of joints per type."""
     roots: list[str]
+    """Root links (a valid robot has exactly one)."""
     problems: list[str]
+    """Structural problems (empty = valid)."""
     frame_only: int = 0
+    """Number of frame-only links (removable from physics)."""
     meshes_total: int = 0
+    """Number of distinct mesh files referenced."""
     missing_meshes: list[str] = field(default_factory=list)
+    """Mesh URIs whose files could not be found."""
     absolute_meshes: list[str] = field(default_factory=list)
+    """Mesh URIs with absolute paths (not portable)."""
     unplaceable_meshes: list[str] = field(default_factory=list)
+    """Mesh URIs that point outside the URDF's folder ('..')."""
     non_stl_meshes: list[str] = field(default_factory=list)
+    """Mesh URIs that are not STL (DAE, OBJ, ...)."""
     heavy_meshes: list[tuple[str, int]] = field(default_factory=list)  # (uri, triangles)
+    """STL meshes over Unity's vertex limit: (uri, triangle count), biggest first."""
     will_collapse: bool = False
+    """True if prepare would collapse frame-only links."""
     links_after: int = 0
+    """Links left after collapsing (the articulation size)."""
     parts: int = 1
+    """Number of articulation parts prepare would make."""
     physics: list[tuple[str, str]] = field(default_factory=list)  # (level, message)
+    """Physics warnings and notes: (level 'warn' or 'info', message)."""
 
     @property
     def ok(self) -> bool:
+        """True when the robot can be prepared: no structural problems and no missing meshes."""
         return not self.problems and not self.missing_meshes
 
 
 def _mesh_roots(config: Config) -> list[Path]:
+    """The config's mesh_roots as Paths."""
     return [Path(p) for p in config.mesh_roots]
 
 
 def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
+    """Validate a URDF and report what prepare would do, without changing anything."""
     config = (config or Config()).check()
     urdf_path = Path(urdf_path)
     robot = load_urdf(urdf_path)
@@ -124,6 +150,12 @@ def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
                                               "mass sat at the part's outer edge). "
                                               "Probably a CAD export error; it changes how the robot turns and rolls. "
                                               "Fix it in the URDF, or use --fix-inertia."))
+        free_wheels = unlimited_wheels(robot, config.joint_roles)
+        if free_wheels and not config.drive_limits:
+            result.physics.insert(0, ("info", f"{len(free_wheels)} wheel joint(s) have no effort/velocity limit, so Unity "
+                                              "would speed up and brake far harder than the real robot (instant stops "
+                                              "can tip it). Set drive_limits from your drive controller config "
+                                              "(e.g. diff_drive_controller max_velocity / max_acceleration)."))
         missing_axis = joints_missing_axis(robot)
         if missing_axis:
             result.physics.insert(0, ("info", f"{len(missing_axis)} moving joint(s) have no <axis> ({', '.join(missing_axis)}). "
@@ -141,6 +173,7 @@ def check(urdf_path: str | Path, config: Config | None = None) -> CheckResult:
 
 
 def _should_collapse(robot: Robot, config: Config) -> bool:
+    """True if frame-only links should be collapsed (always, or auto when over max_links)."""
     return config.collapse_frames == "always" or (
         config.collapse_frames == "auto" and len(robot.links) > config.max_links
     )
@@ -149,15 +182,23 @@ def _should_collapse(robot: Robot, config: Config) -> bool:
 # -- prepare -----------------------------------------------------------------------------
 @dataclass
 class PrepareResult:
+    """What prepare() produced."""
     out_dir: Path
+    """The Unity-ready output folder."""
     urdf_files: list[Path]
+    """The URDF file(s) written (one per articulation part)."""
     manifest_path: Path
+    """Path of manifest.json."""
     report_path: Path
+    """Path of REPORT.md."""
     manifest: dict
+    """The manifest contents."""
     warnings: list[str]
+    """Warnings for the user (missing meshes ignored, absolute paths, ...)."""
 
 
 def _prepare_output_dir(out_dir: Path, urdf_path: Path) -> None:
+    """Make sure out_dir is safe to write: not a file, not containing the input, and empty or our own earlier output."""
     if out_dir.exists():
         if not out_dir.is_dir():
             raise PipelineError(f"The output path {out_dir} is a file, not a folder.")
@@ -179,6 +220,7 @@ def _prepare_output_dir(out_dir: Path, urdf_path: Path) -> None:
 
 def _split_meshes(robot: Robot, resolved: dict[str, Path | None], out_dir: Path,
                   config: Config, log: Log, warnings: list[str]) -> tuple[list[dict], dict]:
+    """Split oversized STL meshes into chunk files and point the URDF at the chunks. Returns (manifest chunk entries, mesh file info)."""
     mesh_files: dict[str, dict] = {}
     for uri in sorted({u.uri for u in mesh_uses(robot)}):
         path = resolved.get(uri)
@@ -223,6 +265,7 @@ def _split_meshes(robot: Robot, resolved: dict[str, Path | None], out_dir: Path,
 
 
 def element_from_holder(holder):
+    """Deep copy of a <visual>/<collision> element without its trailing whitespace."""
     import copy
 
     clone = copy.deepcopy(holder)
@@ -232,6 +275,7 @@ def element_from_holder(holder):
 
 def _copy_meshes(parts: list[Robot], resolved: dict[str, Path | None], skip: set[str],
                  out_dir: Path, warnings: list[str]) -> int:
+    """Copy every mesh (and its textures/materials) into out_dir at its portable path. Returns the number of files copied."""
     copied = 0
     placed: dict[str, Path] = {}
     for uri in sorted({u.uri for robot in parts for u in mesh_uses(robot)}):
@@ -262,6 +306,7 @@ def _copy_meshes(parts: list[Robot], resolved: dict[str, Path | None], skip: set
 
 
 def _safe_stem(name: str) -> str:
+    """File-name-safe version of a name (letters, digits, - and _)."""
     cleaned = "".join(c if c.isalnum() or c in "-_" else "_" for c in name).strip("_")
     return cleaned or "robot"
 
@@ -314,6 +359,15 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
             replace_inertia(physics_source.links[name], info["mesh_inertia_about_centroid"])
         if inertia_fixed:
             log(f"Replaced implausible inertia on {len(inertia_fixed)} link(s) with values from their collision meshes")
+
+    # Optional: measured total mass / centre-of-mass shift from the physical-parameter registry.
+    mass_change: dict = {}
+    adjustment = mass_adjustment(physics_source, config.physical_parameters)
+    if adjustment:
+        mass_change = {**adjustment, "original_inertials": apply_mass_adjustment(robot, adjustment)}
+        apply_mass_adjustment(physics_source, adjustment)
+        log(f"Applied the registry's mass data: masses x{adjustment['scale']:.4f}, "
+            f"centre of mass shifted by {adjustment['offset_ros']} m")
 
     mesh_chunks: list[dict] = []
     mesh_files: dict = {}
@@ -401,10 +455,13 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
             "couplings": (couplings := joint_couplings(original, config.joint_couplings)),
             "springs": joint_springs(physics_source, config.joint_springs, config.joint_roles, couplings),
             "locked_joints": locked_joints(original, config.locked_joints),
+            "drive_limits": drive_limits_block(config.drive_limits),
+            "joint_limits": joint_limits_block(original, config.joint_limits),
+            "parameters": parameters_block(config.physical_parameters),
             "inertia_check": {name: {k: v for k, v in info.items() if k != "mesh_inertia_about_centroid"}
                               for name, info in inertia_check.items()},
             "unity_expected_mass_kg": round(
-                total_mass(original) + len(placeholder_links) * (config.massless_link_mass_kg or 0.0), 6),
+                total_mass(physics_source) + len(placeholder_links) * (config.massless_link_mass_kg or 0.0), 6),
         },
         "unity_compat": {
             "added_default_axis": added_axes,
@@ -412,6 +469,8 @@ def prepare(urdf_path: str | Path, out_dir: str | Path, config: Config | None = 
         },
         # Original <inertial> XML of links whose inertia was replaced (--fix-inertia); rebuild restores it.
         "inertia_from_meshes": inertia_fixed,
+        # total_mass_kg / center_of_mass_offset_m from the registry; rebuild restores original_inertials.
+        "mass_adjustment": mass_change,
         "warnings": warnings,
     }
     manifest_path = out_dir / FILE_NAME

@@ -27,23 +27,33 @@ DEFAULT_CUT_COST = {
     "mimic": 50,
     "keep_together": 1000,
 }
+"""Default cost of cutting each joint type (lower = cut first); mimic and keep-together joints are expensive."""
 
 
 @dataclass
 class Part:
+    """One articulation part: its id, root link and links."""
     id: str
+    """Part id, e.g. 'part_00'."""
     root_link: str
+    """The part's root link."""
     links: list[str]
+    """All links in the part, root first."""
 
 
 @dataclass
 class SplitPlan:
+    """How the robot is divided."""
     parts: list[Part]
+    """The parts, the first one containing the robot's root."""
     cut_joints: list[str] = field(default_factory=list)
+    """Joints cut to make the parts (re-created as bridge joints in Unity)."""
     warnings: list[str] = field(default_factory=list)
+    """Warnings, e.g. a keep-together group that had to be cut."""
 
 
 def single_part_plan(robot: Robot) -> SplitPlan:
+    """A plan with the whole robot in one part (the usual case)."""
     order = robot.tree_order()
     return SplitPlan(parts=[Part("part_00", order[0], order)])
 
@@ -54,6 +64,7 @@ def plan_split(
     keep_together: list[list[str]] | None = None,
     cut_cost: dict[str, int] | None = None,
 ) -> SplitPlan:
+    """Divide the robot into parts of at most max_links links (greedy, bottom-up; see the module docstring)."""
     if max_links < 1:
         raise PipelineError("max_links must be at least 1.")
     costs = {**DEFAULT_CUT_COST, **(cut_cost or {})}

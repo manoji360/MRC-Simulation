@@ -21,10 +21,13 @@ import xml.etree.ElementTree as ET
 from .model import Robot
 
 AXIS_JOINT_TYPES = ("revolute", "continuous", "prismatic")
+"""Joint types that have an axis (and crash the URDF Importer when it is left out)."""
 DEFAULT_AXIS = "1 0 0"
+"""The URDF default axis, written explicitly where a joint omits <axis>."""
 
 
 def joints_missing_axis(robot: Robot) -> list[str]:
+    """Moving joints with no <axis> element (valid URDF, but the URDF Importer crashes on them)."""
     return [j.name for j in robot.joints.values() if j.type in AXIS_JOINT_TYPES and j.element.find("axis") is None]
 
 
@@ -37,9 +40,11 @@ def add_default_axes(robot: Robot) -> list[str]:
 
 
 PLACEHOLDER_MARK = "urdf_pipeline_placeholder"
+"""Attribute marking an <inertial> the pipeline added, so rebuild can remove it."""
 
 
 def links_missing_inertial(robot: Robot) -> list[str]:
+    """Links with no <inertial> (Unity's URDF Importer would give each a mass of 1 kg)."""
     return [l.name for l in robot.links.values() if l.element.find("inertial") is None]
 
 
@@ -56,6 +61,7 @@ def add_placeholder_inertials(robot: Robot, mass_kg: float) -> list[str]:
 
 
 def remove_placeholder_inertials(robot: Robot, names: list[str]) -> None:
+    """Remove the placeholder <inertial> blocks added by add_placeholder_inertials (used by rebuild)."""
     for name in names:
         link = robot.links.get(name)
         if link is None:
@@ -66,6 +72,7 @@ def remove_placeholder_inertials(robot: Robot, names: list[str]) -> None:
 
 
 def remove_added_axes(robot: Robot, names: list[str]) -> None:
+    """Remove the default axes added by add_default_axes (used by rebuild)."""
     for name in names:
         joint = robot.joints.get(name)
         if joint is None:

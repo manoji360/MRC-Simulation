@@ -26,11 +26,14 @@ from __future__ import annotations
 import math
 
 Vec3 = tuple[float, float, float]
+"""A 3-vector (x, y, z)."""
 Quat = tuple[float, float, float, float]
+"""A quaternion (x, y, z, w)."""
 
 
 # -- ROS -> Unity ----------------------------------------------------------------------
 def ros_to_unity_position(v: Vec3) -> Vec3:
+    """ROS position (x forward, y left, z up) -> Unity position (x right, y up, z forward): (-y, z, x)."""
     x, y, z = v
     return (-y, z, x)
 
@@ -41,11 +44,13 @@ def ros_to_unity_direction(v: Vec3) -> Vec3:
 
 
 def ros_to_unity_scale(s: Vec3) -> Vec3:
+    """ROS scale -> Unity scale: (y, z, x) (scales have no sign)."""
     x, y, z = s
     return (y, z, x)
 
 
 def ros_to_unity_quaternion(q: Quat) -> Quat:
+    """ROS quaternion (x, y, z, w) -> Unity quaternion: (y, -z, -x, w)."""
     x, y, z, w = q
     return (y, -z, -x, w)
 
@@ -72,6 +77,7 @@ def rpy_to_quaternion(rpy: Vec3) -> Quat:
 
 
 def quaternion_multiply(a: Quat, b: Quat) -> Quat:
+    """Hamilton product a * b of two (x, y, z, w) quaternions (apply b, then a)."""
     ax, ay, az, aw = a
     bx, by, bz, bw = b
     return (
@@ -83,6 +89,7 @@ def quaternion_multiply(a: Quat, b: Quat) -> Quat:
 
 
 def rotate_vector(q: Quat, v: Vec3) -> Vec3:
+    """Rotate vector v by quaternion q."""
     x, y, z, w = q
     conj = (-x, -y, -z, w)
     rx, ry, rz, _ = quaternion_multiply(quaternion_multiply(q, (v[0], v[1], v[2], 0.0)), conj)
@@ -90,6 +97,7 @@ def rotate_vector(q: Quat, v: Vec3) -> Vec3:
 
 
 def _axis_angle(axis: Vec3, degrees: float) -> Quat:
+    """Quaternion for a rotation of `degrees` about a unit axis."""
     half = math.radians(degrees) / 2
     s = math.sin(half)
     return (axis[0] * s, axis[1] * s, axis[2] * s, math.cos(half))

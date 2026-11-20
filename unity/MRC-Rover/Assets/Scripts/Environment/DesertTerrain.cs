@@ -11,22 +11,32 @@ namespace MRC.Environment
     /// </summary>
     public static class DesertTerrain
     {
+        /// <summary>Terrain size in metres along X and Z.</summary>
         public const float Size = 400f;           // metres (X and Z)
+        /// <summary>Vertical range of the heightmap in metres.</summary>
         public const float HeightRange = 45f;     // metres of vertical range in the heightmap
+        /// <summary>Height (m) of world y = 0 above the terrain's lowest point; the flat course area sits here.</summary>
         public const float BaseLevel = 8f;        // metres above the terrain's lowest point = world y 0
+        /// <summary>Heightmap resolution (samples per side; Unity needs 2^n + 1).</summary>
         const int Resolution = 513;
+        /// <summary>Resolution of the texture-blend (splat) map.</summary>
         const int SplatResolution = 512;
 
         // Mesas/buttes in terrain-local metres: (x, z, radius, height).
+        /// <summary>Mesas and buttes in terrain-local metres: (x, z, radius, height).</summary>
         static readonly Vector4[] Mesas =
         {
             new Vector4(55, 335, 48, 26), new Vector4(340, 315, 40, 22), new Vector4(320, 55, 55, 18),
             new Vector4(95, 70, 13, 20), new Vector4(250, 365, 16, 24),
         };
 
+        /// <summary>Pale sand colour of the flats.</summary>
         public static readonly Color PaleSand = new Color(0.72f, 0.58f, 0.43f);
+        /// <summary>Red soil colour (Morrison/Entrada formations).</summary>
         public static readonly Color RedSoil = new Color(0.56f, 0.31f, 0.20f);
+        /// <summary>Grey bentonite colour of the badland mounds.</summary>
         public static readonly Color Bentonite = new Color(0.50f, 0.48f, 0.47f);
+        /// <summary>Purple shale colour of the banded mesa slopes.</summary>
         public static readonly Color PurpleShale = new Color(0.40f, 0.27f, 0.30f);
 
         /// <summary>
@@ -81,6 +91,7 @@ namespace MRC.Environment
             return terrain;
         }
 
+        /// <summary>Terrain height (m) at terrain-local (x, z); also returns how much of a dry wash (0-1) and mound height is there (for texturing).</summary>
         static float HeightAt(float x, float z, Noise n, out float wash, out float moundHeight)
         {
             float h = BaseLevel;
@@ -110,6 +121,7 @@ namespace MRC.Environment
             return h;
         }
 
+        /// <summary>The four texture layers (sand, red soil, bentonite, purple shale) with seeded noise textures.</summary>
         static TerrainLayer[] Layers(int seed)
         {
             TerrainLayer Layer(Color c, float variation, float tile, int s) => new TerrainLayer
@@ -127,6 +139,7 @@ namespace MRC.Environment
             };
         }
 
+        /// <summary>Texture-blend weights per splat cell: washes get sand, mounds bentonite, steep slopes shale, the rest red soil.</summary>
         static float[,,] Splat(TerrainData data, float[,] wash, float[,] mound, Noise n)
         {
             var map = new float[SplatResolution, SplatResolution, 4];
@@ -157,6 +170,7 @@ namespace MRC.Environment
             return map;
         }
 
+        /// <summary>Scatter rocks with colliders over the terrain, keeping the flat course area clear.</summary>
         static void ScatterRocks(Terrain terrain, Transform parent, Vector3 flatCenter, Vector2 flatSize, int seed)
         {
             var root = new GameObject("DesertRocks").transform;
@@ -196,14 +210,20 @@ namespace MRC.Environment
         /// <summary>Seeded value noise / fBm (independent of UnityEngine.Random state).</summary>
         sealed class Noise
         {
-            readonly float ox, oz;
+            /// <summary>Random X offset into the Perlin noise field (from the seed).</summary>
+            readonly float ox;
+            /// <summary>Random Z offset into the Perlin noise field (from the seed).</summary>
+            readonly float oz;
+            /// <summary>Noise field for a seed (same seed = same terrain).</summary>
             public Noise(int seed)
             {
                 var rng = new System.Random(seed);
                 ox = (float)rng.NextDouble() * 1000f;
                 oz = (float)rng.NextDouble() * 1000f;
             }
+            /// <summary>Perlin noise in 0..1 at (x, z).</summary>
             public float Value(float x, float z) => Mathf.PerlinNoise(ox + x, oz + z);
+            /// <summary>Fractal Brownian motion: `octaves` layers of noise, each at double frequency and half amplitude; result about -1..1.</summary>
             public float Fbm(float x, float z, int octaves)
             {
                 float sum = 0f, amp = 1f, norm = 0f;

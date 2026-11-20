@@ -22,4 +22,4 @@ where = ["urdf-pipeline"]
 include = ["urdf_pipeline*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "urdf-pipeline/tests"]
+testpaths = ["tests", "urdf-pipeline/tests", "ros2/src/mrc_waypoint_demo/test"]

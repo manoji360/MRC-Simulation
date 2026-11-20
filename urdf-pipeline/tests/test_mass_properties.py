@@ -1,3 +1,5 @@
+"""Tests of mesh mass properties, inertia plausibility checks and --fix-inertia."""
+
 import math
 import random
 
@@ -10,9 +12,11 @@ from urdf_pipeline.merge import rebuild
 from urdf_pipeline.pipeline import check, prepare
 
 IDENTITY = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+"""3x3 identity rotation."""
 
 
 def cube_triangles(size=1.0):
+    """Triangles of a closed axis-aligned cube from (0,0,0) to (size,size,size), outward-facing."""
     s = size
     v = [(0, 0, 0), (s, 0, 0), (s, s, 0), (0, s, 0), (0, 0, s), (s, 0, s), (s, s, s), (0, s, s)]
     faces = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
@@ -21,6 +25,7 @@ def cube_triangles(size=1.0):
 
 
 def test_cube_mass_properties(tmp_path):
+    """Volume, centroid and inertia of a cube match the textbook values."""
     path = tmp_path / "cube.stl"
     write_stl(path, cube_triangles(2.0))
     volume, centroid, inertia = mesh_solid_properties(path, [1, 1, 1], IDENTITY, [0, 0, 0])
@@ -31,6 +36,7 @@ def test_cube_mass_properties(tmp_path):
 
 
 def test_principal_axes_reconstruct_tensor():
+    """principal_axes() rebuilds random tensors exactly (R diag(I) R^T == tensor)."""
     rng = random.Random(4)
     for _ in range(50):
         a = [[rng.uniform(-1, 1) for _ in range(3)] for _ in range(3)]
@@ -45,6 +51,7 @@ def test_principal_axes_reconstruct_tensor():
 
 
 def _robot_with_bad_inertia(folder):
+    """A two-link robot (good and 100x-too-large inertia) using one cube mesh; returns the URDF path."""
     write_stl(folder / "meshes" / "block.stl", cube_triangles(0.2))  # 0.2 m cube
     good = 'ixx="0.0067" iyy="0.0067" izz="0.0067"'                  # 1 kg 0.2 m cube: 1*(0.04+0.04)/12
     bad = 'ixx="0.67" iyy="0.67" izz="0.67"'                          # 100x too large
@@ -61,6 +68,7 @@ def _robot_with_bad_inertia(folder):
 
 
 def test_check_flags_implausible_inertia(tmp_path):
+    """check() flags only the link with implausible inertia, and says it is physically impossible."""
     result = check(_robot_with_bad_inertia(tmp_path))
     warning = next(m for level, m in result.physics if "disagrees with their shape" in m)
     assert "bad (100" in warning and "good" not in warning.split(":")[1]
@@ -68,6 +76,7 @@ def test_check_flags_implausible_inertia(tmp_path):
 
 
 def test_hard_bound_and_visual_fallback(tmp_path):
+    """The hard physical bound is exact for a cube; visual meshes are used when there is no collision mesh; multiple meshes are combined."""
     from urdf_pipeline.mass_properties import inertia_plausibility
     from urdf_pipeline.parse import load_urdf
     urdf = _robot_with_bad_inertia(tmp_path)
@@ -91,6 +100,7 @@ def test_hard_bound_and_visual_fallback(tmp_path):
 
 
 def test_fix_inertia_replaces_and_rebuild_restores(tmp_path):
+    """--fix-inertia replaces only the bad link with mesh-derived values, and rebuild restores the original."""
     urdf = _robot_with_bad_inertia(tmp_path / "in")
     m = prepare(urdf, tmp_path / "out", Config(fix_inertia=True)).manifest
     assert list(m["inertia_from_meshes"]) == ["bad"]

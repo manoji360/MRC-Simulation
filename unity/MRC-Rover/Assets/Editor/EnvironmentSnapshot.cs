@@ -10,11 +10,14 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
+/// <summary>Renders preview images of the generated test environment without entering Play mode.</summary>
 public static class EnvironmentSnapshot
 {
+    /// <summary>Menu entry: capture previews for -variant (default 'tuned').</summary>
     [MenuItem("MRC/Capture Environment Screenshots")]
     public static void CaptureFromMenu() => Capture(FeasibilityPaths.Arg("-variant") ?? "tuned");
 
+    /// <summary>Batch entry point (needs graphics, so no -nographics); exits Unity with 0 or 1.</summary>
     public static void CaptureFromCommandLine()
     {
         int code = 0;
@@ -23,6 +26,7 @@ public static class EnvironmentSnapshot
         EditorApplication.Exit(code);
     }
 
+    /// <summary>Build the environment and rover, render several camera views and save PNGs to FeasibilityResults/screenshots/.</summary>
     public static void Capture(string variant)
     {
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);

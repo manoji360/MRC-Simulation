@@ -21,6 +21,7 @@ from .model import Link, Robot
 from .stl import read_stl
 
 PLAUSIBLE_RATIO = 3.0
+"""URDF vs mesh inertia may differ by up to this factor before a link is flagged (real parts are not uniform solids)."""
 
 
 def mesh_solid_properties(path: Path, scale, rotation, translation):

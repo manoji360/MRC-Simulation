@@ -16,6 +16,7 @@ from .parse import element_from_string, element_to_string
 
 
 def _bare(robot: Robot, name: str) -> bool:
+    """True if the link has no shape and no (or zero) mass."""
     link = robot.links[name]
     if link.has_geometry:
         return False
@@ -67,6 +68,7 @@ def collapse_frames(robot: Robot) -> list[dict]:
 
 
 def restore_frames(robot: Robot, entries: list[dict]) -> None:
+    """Re-add collapsed frame links and their fixed joints from the manifest entries (used by rebuild)."""
     for entry in entries:
         robot.add_link(element_from_string(entry["link_xml"]))
         robot.add_joint(element_from_string(entry["joint_xml"]))

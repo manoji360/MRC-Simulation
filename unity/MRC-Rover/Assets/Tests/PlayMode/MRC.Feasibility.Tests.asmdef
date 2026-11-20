@@ -5,7 +5,10 @@
         "MRC.Feasibility",
         "MRC.Environment",
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEditor.TestRunner",
+        "Unity.Robotics.ROSTCPConnector",
+        "Unity.Robotics.ROSTCPConnector.Messages",
+        "Unity.Robotics.ROSTCPConnector.MessageGeneration"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
