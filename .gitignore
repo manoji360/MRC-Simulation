@@ -9,3 +9,26 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+# Unity generated files
+unity/**/Library/
+unity/**/Temp/
+unity/**/Logs/
+unity/**/Obj/
+unity/**/Build/
+unity/**/Builds/
+unity/**/UserSettings/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/*.slnx
+unity/**/.vs/
+unity/**/.vscode/
+
+# ROS 2 / colcon generated files
+install/
+log/
+
+# Temporary files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
