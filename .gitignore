@@ -9,3 +9,14 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Unity (generated files, do not commit)
+unity/**/[Ll]ibrary/
+unity/**/[Tt]emp/
+unity/**/[Oo]bj/
+unity/**/[Ll]ogs/
+unity/**/[Uu]ser[Ss]ettings/
+unity/**/[Bb]uilds/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/.vscode/
