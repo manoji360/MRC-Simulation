@@ -1,0 +1,13 @@
+diff --git a/software/ros_packages/rover_gazebo/setup.py b/software/ros_packages/rover_gazebo/setup.py
+index cb2363a..196cdb4 100644
+--- a/software/ros_packages/rover_gazebo/setup.py
++++ b/software/ros_packages/rover_gazebo/setup.py
+@@ -12,7 +12,7 @@ setup(
+         ('share/ament_index/resource_index/packages',
+             ['resource/' + package_name]),
+         ('share/' + package_name, ['package.xml']),
+-        ('share/' + package_name, glob('launch/*launch.[pxy][yma]*')),
++        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+         (os.path.join('share', package_name, 'rover2_control'), glob('rover2_control/*.py')),
+         (os.path.join('share', package_name, 'config'), glob('config/*')),
+         (os.path.join('share', package_name, 'worlds'), glob('worlds/*.sdf')),
