@@ -9,3 +9,8 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# URDF pipeline: generated from the OSU rover repo / produced by the pipeline.
+# Do not commit the rover's CAD meshes without the team's confirmation.
+urdf-pipeline/input/
+urdf-pipeline/output/

@@ -1,0 +1,27 @@
+{
+    "name": "MRC.Feasibility.Tests",
+    "rootNamespace": "MRC.Feasibility.Tests",
+    "references": [
+        "MRC.Feasibility",
+        "MRC.Environment",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "Unity.Robotics.ROSTCPConnector",
+        "Unity.Robotics.ROSTCPConnector.Messages",
+        "Unity.Robotics.ROSTCPConnector.MessageGeneration"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Newtonsoft.Json.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

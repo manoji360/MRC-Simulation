@@ -14,5 +14,12 @@ license = { text = "MIT" }
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
+[project.scripts]
+mrc-urdf = "urdf_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["urdf-pipeline"]
+include = ["urdf_pipeline*"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "urdf-pipeline/tests", "ros2/src/mrc_waypoint_demo/test"]

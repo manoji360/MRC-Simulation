@@ -1,0 +1,17 @@
+# Copy to %UserProfile%\.wslconfig, then run `wsl --shutdown` from PowerShell.
+# Sized for a 32 GB / 24-thread laptop; lower memory/processors on smaller machines
+# (rule of thumb: half your RAM, about half your threads).
+
+[wsl2]
+# localhost works in both directions between Windows (Unity) and WSL (ROS 2).
+networkingMode=mirrored
+dnsTunneling=true
+autoProxy=true
+firewall=true
+
+memory=16GB
+processors=12
+swap=8GB
+
+# WSLg (GUI apps like RViz) is on by default.
+guiApplications=true
