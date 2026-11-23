@@ -87,13 +87,13 @@ On the other side, Unity's scene is generated from code, nothing generated is co
 
 ### Security and cost
 
-The bridge listens on TCP port 10000 on `127.0.0.1` only. WSL2 mirrored networking makes that loopback address reach WSL from Windows. Nothing is exposed beyond the machine; remote use would need its own review. Dependencies are pinned to git tags (URDF Importer v0.5.2, ROS-TCP-Connector v0.7.0, endpoint branch `main-ros2`).
+The bridge listens on TCP port 10000 on `127.0.0.1` only. Nothing is exposed beyond the machine; remote use would need its own review. Dependencies are pinned to git tags (URDF Importer v0.5.2, ROS-TCP-Connector v0.7.0, endpoint branch `main-ros2`).
 
 Gazebo is free and open source. Unity's cost depends on licence eligibility, which is still unconfirmed (see Constraints). The larger cost is team time: the Unity prototype spans 6 commits from November 8 to 19, plus uncommitted work through November 22, though hours were not logged. A switch now would discard the scene, rig and tests, but keep the pipeline and the ROS nodes.
 
 ## Recommendation and Verification Plan
 
-Adopt Unity (Option A) as the platform, on the condition that gates 4 and 6 below pass by the end of week 2 of winter term. The analysis supports Unity because its main risk, rover import, was the one the October draft could not assess, and it is now resolved with evidence. Gazebo's advantage, the documented Jazzy pairing, still matters. It now comes down to one question: does the TCP bridge work reliably? A focused test can answer that, so it does not justify abandoning working physics, terrain and tests.
+Adopt Unity (Option A) as the platform, on the condition that gates 4 and 6 below pass by the end of week 2 of winter term. The analysis supports Unity because its main risk, rover import, was the one the October draft could not assess, and it is now resolved with evidence. Gazebo's remaining advantage, the documented Jazzy pairing, reduces to one testable question: does the TCP bridge work reliably? That does not justify abandoning working physics, terrain and tests.
 
 Gazebo stays the named fallback. If the bridge cannot pass gate 4 after the team diagnoses it, we build gates 1–4 in Gazebo Harmonic before adding sensors to Unity. The URDF pipeline and the ROS nodes would carry over.
 
@@ -143,6 +143,8 @@ AI tools did substantial work on this decision, so most of our checks are mechan
 2. Ran the feasibility, terrain, regression and arm-pose suites on the lead's own machine (the Unity logs record the lead's licence session) and read the result files.
 3. Made every prototype commit under the lead's own git account (six commits, November 8–19), so every AI-written change entered the branch through the lead.
 4. Chose which model simplifications to accept (locked four-bar joints, mesh-derived inertia, placeholder masses); each is recorded with its reason and source in `docs/assumed-data.md`.
+5. Watched the rover drive the course and desert in the editor, which exposed the 30° ramp flip and the instant-stop kickback that the drive-chain work later fixed.
+6. Reviewed every assumed value in `docs/assumed-data.md` and decided which to measure first.
 
 **Still to validate before acceptance is final:** a second teammate reproduces setup (gate 1); the lead personally checks the cited Gazebo version guidance and the Unity editor terms; and the locked four-bar reading of the suspension is checked against the physical rover.
 
